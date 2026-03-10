@@ -1,0 +1,78 @@
+import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { getCalendarClient } from "@/lib/google-auth";
+import { getAvailableSlots, getAvailableDatesInMonth } from "@/lib/availability";
+import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const VALID_DURATIONS = [15, 30, 60, 120];
+
+export async function GET(request: NextRequest) {
+  const limited = await checkRateLimit(limiters.availability, request);
+  if (limited) return limited;
+
+  try {
+    const { searchParams } = request.nextUrl;
+    const month = searchParams.get("month"); // "YYYY-MM"
+    const date = searchParams.get("date");   // "YYYY-MM-DD"
+    const duration = Number(searchParams.get("duration"));
+    const timezone = searchParams.get("timezone");
+
+    if (!duration || !timezone) {
+      return NextResponse.json(
+        { error: "Missing required parameters: duration, timezone" },
+        { status: 400 }
+      );
+    }
+
+    if (!VALID_DURATIONS.includes(duration)) {
+      return NextResponse.json(
+        { error: "Invalid duration. Must be 15, 30, 60, or 120." },
+        { status: 400 }
+      );
+    }
+
+    if (timezone !== "UTC" && !Intl.supportedValuesOf("timeZone").includes(timezone)) {
+      return NextResponse.json(
+        { error: "Invalid timezone." },
+        { status: 400 }
+      );
+    }
+
+    const calendar = getCalendarClient();
+
+    // Month-level availability: returns which dates have at least one slot
+    if (month && !date) {
+      const [yearStr, monthStr] = month.split("-");
+      const year = Number(yearStr);
+      const monthIndex = Number(monthStr) - 1; // 0-indexed
+      if (isNaN(year) || isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+        return NextResponse.json({ error: "Invalid month format." }, { status: 400 });
+      }
+      const availableDates = await getAvailableDatesInMonth(
+        calendar,
+        year,
+        monthIndex,
+        duration,
+        timezone
+      );
+      return NextResponse.json({ month, timezone, duration, availableDates });
+    }
+
+    // Day-level availability: returns time slots for a specific date
+    if (date) {
+      const slots = await getAvailableSlots(calendar, date, duration, timezone);
+      return NextResponse.json({ date, timezone, duration, slots });
+    }
+
+    return NextResponse.json(
+      { error: "Provide either date or month parameter." },
+      { status: 400 }
+    );
+  } catch (error) {
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to fetch availability." },
+      { status: 500 }
+    );
+  }
+}
