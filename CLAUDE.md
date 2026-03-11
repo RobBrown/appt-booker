@@ -84,7 +84,8 @@ The private repo (`hal866245/appt-booker`, remote `origin`) and the public repo 
 1. `gh auth switch --user RobBrown`
 2. Create a staging branch from the public remote: `git checkout -b release-staging public/main`
 3. Snapshot the full current state from main: `git checkout main -- .`
-4. Commit with a clean release message — no `Co-Authored-By` lines, no security implementation details
-5. Push: `git push public release-staging:main`
-6. Switch back: `gh auth switch --user hal866245`
-7. Return to main and delete the staging branch: `git checkout main && git branch -d release-staging`
+4. Strip files listed in `.gitpublicignore`: `git ls-files -z --others --ignored --exclude-from=.gitpublicignore | xargs -0 git rm -f --ignore-unmatch`
+5. Commit with a clean release message — no `Co-Authored-By` lines, no security implementation details
+6. Push: `git push public release-staging:main`
+7. Switch back: `gh auth switch --user hal866245`
+8. Return to main and delete the staging branch: `git checkout main && git branch -d release-staging`

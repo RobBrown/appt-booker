@@ -173,7 +173,7 @@ export function BookingPage({
     []
   );
 
-useEffect(() => {
+  useEffect(() => {
     if (!duration) return;
     fetchMonthDates(calendarYear, calendarMonth, duration, timezone);
   }, [calendarYear, calendarMonth, duration, timezone, fetchMonthDates]);

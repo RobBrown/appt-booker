@@ -1,11 +1,6 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# NOTE: This .gitignore file is intended to always be ignored for every type of git push. A second file, .gitpublicignore extends this with additional files. The use case for this is to push Claude documentation files to a private account with a private repo, but when a "public deployment" is made to a second github account with a public repo, these files are not published. The goal is to maintain documentation isolation for public repos by removing AI instructional overhead.
 
-# Claude and planning documents
-changes.md
-CLAUDE.md
-/phases
-PRD.md
-WORKPLAN.md
+.gitpublicignore
 
 # dependencies
 /node_modules
