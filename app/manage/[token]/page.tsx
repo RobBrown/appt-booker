@@ -320,7 +320,7 @@ export default function ManagePage() {
 
   if (view === "loading") {
     return (
-      <PageShell>
+      <PageShell title="Manage your booking">
         <div className="flex justify-center py-16">
           <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
         </div>
@@ -330,7 +330,7 @@ export default function ManagePage() {
 
   if (view === "invalid") {
     return (
-      <PageShell>
+      <PageShell title="Manage your booking">
         <Card>
           <div className="text-center py-4 space-y-4">
             <p className="text-gray-900 dark:text-slate-100 font-medium">
@@ -356,12 +356,17 @@ export default function ManagePage() {
     const dateStr = tzFormat(start, "MMMM d", { timeZone: timezone });
     const timeStr = tzFormat(start, "h:mm a", { timeZone: timezone });
     return (
-      <PageShell>
+      <PageShell centered>
+        <ManageAnimStyles />
         <Card>
           <div className="text-center py-4 space-y-3">
-            <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <div className="cancel-wrapper mx-auto relative" style={{ width: 80, height: 80 }}>
+              <div className="manage-shimmer" />
+              <svg viewBox="0 0 52 52" width="80" height="80">
+                <circle className="circle-fill" cx="26" cy="26" r="25" fill="#4285F4" />
+                <circle className="cancel-circle" cx="26" cy="26" r="25" />
+                <path className="cancel-x" d="M16 16l20 20" />
+                <path className="cancel-x" d="M36 16L16 36" />
               </svg>
             </div>
             <p className="text-gray-900 dark:text-slate-100 font-medium">
@@ -406,12 +411,16 @@ export default function ManagePage() {
     ].join("\n");
 
     return (
-      <PageShell hideHeader>
+      <PageShell centered>
+        <ManageAnimStyles />
         <Card>
           <div className="text-center space-y-4">
-            <div className="w-14 h-14 rounded-full bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                <polyline points="20 6 9 17 4 12" />
+            <div className="reschedule-wrapper mx-auto relative" style={{ width: 80, height: 80 }}>
+              <div className="manage-shimmer" />
+              <svg viewBox="0 0 52 52" width="80" height="80">
+                <circle className="circle-fill" cx="26" cy="26" r="25" fill="#4285F4" />
+                <path className="reschedule-path" d="M38 26c0-6.6-5.4-12-12-12s-12 5.4-12 12m0 0l-4-4m4 4l4-4" />
+                <path className="reschedule-path" d="M14 26c0 6.6 5.4 12 12 12s12-5.4 12-12m0 0l4 4m-4-4l-4 4" />
               </svg>
             </div>
             <div>
@@ -457,9 +466,9 @@ export default function ManagePage() {
   // idle / cancel-confirm / cancelling
   if (view === "idle" || view === "cancel-confirm" || view === "cancelling") {
     return (
-      <PageShell>
+      <PageShell title="Manage your booking">
         <div className="space-y-4">
-          <Card label="Your booking">
+          <Card>
             <BookingSummary b={booking} tz={timezone} />
           </Card>
 
@@ -518,9 +527,9 @@ export default function ManagePage() {
   // rescheduling / completing-reschedule
   if (view === "rescheduling" || view === "completing-reschedule") {
     return (
-      <PageShell>
+      <PageShell title="Let's Find a New Time">
         <div className="space-y-4">
-          <Card label="Pick a new time">
+          <Card>
             <DateTimeStep
               duration={booking.duration}
               selectedDate={newDate}
@@ -574,15 +583,20 @@ export default function ManagePage() {
 // Layout helpers
 // -------------------------------------------------------------------------
 
-function PageShell({ children, hideHeader }: { children: React.ReactNode; hideHeader?: boolean }) {
+function PageShell({ children, title, centered }: { children: React.ReactNode; title?: string; centered?: boolean }) {
+  if (centered) {
+    return (
+      <div className="min-h-screen min-h-dvh bg-gray-50 dark:bg-slate-900 flex items-start sm:items-center justify-center pt-[15px] px-4 pb-4 sm:p-4">
+        <div className="w-full max-w-xl">{children}</div>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
-      <div className="max-w-xl mx-auto px-4 py-10 sm:py-14">
-        {!hideHeader && (
-          <header className="mb-10 text-center">
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">
-              Manage your booking
-            </h1>
+      <div className="max-w-xl mx-auto px-4 py-6 sm:py-10">
+        {title && (
+          <header className="mb-6 text-center">
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">{title}</h1>
           </header>
         )}
         {children}
@@ -610,5 +624,88 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-gray-500 dark:text-slate-400 w-20 flex-shrink-0">{label}</span>
       <span className="text-gray-900 dark:text-slate-100">{children}</span>
     </div>
+  );
+}
+
+function ManageAnimStyles() {
+  return (
+    <style>{`
+      @keyframes manage-bounce {
+        0% { transform: scale(0.5); opacity: 0; }
+        60% { transform: scale(1.12); }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes manage-circle-draw {
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes manage-fill-pop {
+        100% { opacity: 1; transform: scale(1); }
+      }
+      @keyframes manage-x-draw {
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes manage-reschedule-draw {
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes manage-rotate {
+        from { transform: rotate(-90deg); }
+        to { transform: rotate(0deg); }
+      }
+      @keyframes manage-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .cancel-wrapper {
+        animation: manage-bounce 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+      .reschedule-wrapper {
+        animation: manage-bounce 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+      .manage-shimmer {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+        background-size: 200% 100%;
+        border-radius: 50%;
+        mix-blend-mode: screen;
+        animation: manage-shimmer 1.5s ease-in-out 1.2s forwards;
+        pointer-events: none;
+      }
+      .circle-fill {
+        opacity: 0;
+        transform: scale(0.8);
+        transform-origin: center;
+        animation: manage-fill-pop 0.4s ease-out 0.3s forwards;
+      }
+      .cancel-circle {
+        fill: none;
+        stroke: #4285F4;
+        stroke-width: 2;
+        stroke-dasharray: 160;
+        stroke-dashoffset: 160;
+        animation: manage-circle-draw 0.7s ease-out forwards;
+      }
+      .cancel-x {
+        fill: none;
+        stroke: white;
+        stroke-width: 5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 30;
+        stroke-dashoffset: 30;
+        animation: manage-x-draw 0.5s ease-out 0.5s forwards;
+      }
+      .reschedule-path {
+        fill: none;
+        stroke: white;
+        stroke-width: 4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 60;
+        stroke-dashoffset: 60;
+        transform-origin: center;
+        animation: manage-reschedule-draw 0.6s ease-out 0.5s forwards, manage-rotate 1s ease-out 0.5s forwards;
+      }
+    `}</style>
   );
 }

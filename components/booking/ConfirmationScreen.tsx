@@ -124,51 +124,98 @@ export function ConfirmationScreen({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4">
-      <div
-        className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-slate-700 text-center"
-        style={{ animation: "fadeUp 0.4s ease both" }}
-      >
+    <div className="fixed inset-0 overflow-y-auto bg-gray-50 dark:bg-slate-900 flex items-start sm:items-center justify-center pt-[15px] px-4 pb-4 sm:p-4">
+      <style>{`
+        @keyframes checkmark-squish {
+          0% { transform: scale(0.5); opacity: 0; }
+          60% { transform: scale(1.12); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes circle-draw {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes circle-fill-pop {
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes check-draw {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes shimmer-sweep {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes card-fade-up {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .checkmark-wrapper {
+          animation: checkmark-squish 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        .circle-fill {
+          opacity: 0;
+          transform: scale(0.8);
+          transform-origin: center;
+          animation: circle-fill-pop 0.4s ease-out 0.3s forwards;
+        }
+        .checkmark-circle {
+          fill: none;
+          stroke: #4285F4;
+          stroke-width: 2;
+          stroke-dasharray: 160;
+          stroke-dashoffset: 160;
+          animation: circle-draw 0.7s ease-out forwards;
+        }
+        .checkmark-check {
+          fill: none;
+          stroke: white;
+          stroke-width: 5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          stroke-dasharray: 50;
+          stroke-dashoffset: 50;
+          animation: check-draw 0.5s ease-out 0.5s forwards;
+        }
+        .checkmark-shimmer {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+          background-size: 200% 100%;
+          border-radius: 50%;
+          mix-blend-mode: screen;
+          animation: shimmer-sweep 1.5s ease-in-out 1.2s forwards;
+          pointer-events: none;
+        }
+        .confirmation-card {
+          animation: card-fade-up 0.4s ease both;
+        }
+      `}</style>
+
+      <div className="confirmation-card w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-slate-700 text-center">
         {/* Animated checkmark */}
-        <div
-          className="w-20 h-20 rounded-full bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center mx-auto mb-6"
-          style={{ animation: "scaleIn 0.4s ease both" }}
-        >
-          <svg
-            className="w-10 h-10 text-blue-600 dark:text-blue-400"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline
-              points="20 6 9 17 4 12"
-              style={{
-                strokeDasharray: 25,
-                strokeDashoffset: 25,
-                animation: "drawStroke 0.4s ease 0.3s both",
-              }}
-            />
+        <div className="checkmark-wrapper relative mx-auto mb-4" style={{ width: 80, height: 80 }}>
+          <div className="checkmark-shimmer" />
+          <svg viewBox="0 0 52 52" width="80" height="80">
+            <circle className="circle-fill" cx="26" cy="26" r="25" fill="#4285F4" />
+            <circle className="checkmark-circle" cx="26" cy="26" r="25" />
+            <path className="checkmark-check" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
           </svg>
         </div>
 
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100 mb-2">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100 mb-1">
           You&rsquo;re booked.
         </h1>
-        <p className="text-gray-500 dark:text-slate-400 mb-8">
+        <p className="text-gray-500 dark:text-slate-400 mb-5 text-sm">
           {hostName} will see you on {dateStr} at {timeStr} {tzAbbr}.
         </p>
 
         {emailFailed && (
-          <div className="mb-6 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-left text-sm text-amber-800 dark:text-amber-300">
+          <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-left text-sm text-amber-800 dark:text-amber-300">
             Your booking is confirmed — we just had trouble sending the confirmation email. Here are your details.
           </div>
         )}
 
         {/* Summary */}
-        <div className="bg-gray-50 dark:bg-slate-900 rounded-xl p-4 text-left mb-8 space-y-2">
+        <div className="bg-gray-50 dark:bg-slate-900 rounded-xl p-4 text-left mb-5 space-y-2">
           {attendeeNames && <Row label="Attendees">{attendeeNames}</Row>}
           {description && <Row label="Agenda">{description}</Row>}
           <Row label="When">{ordinalDateStr} at {timeStr} {tzAbbr}</Row>
@@ -178,7 +225,7 @@ export function ConfirmationScreen({
         </div>
 
         {/* Calendar buttons */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row gap-2.5 mb-2.5">
           <a
             href={gcalUrl}
             target="_blank"
@@ -196,7 +243,7 @@ export function ConfirmationScreen({
         </div>
 
         {/* Share + reset */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-2.5">
           <button
             onClick={handleCopy}
             className="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white text-sm font-medium transition-colors"

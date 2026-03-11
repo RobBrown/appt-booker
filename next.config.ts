@@ -10,6 +10,8 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Disable browser features this app does not use
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // Force HTTPS for two years; include subdomains
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
   // Content Security Policy
   // Note: 'unsafe-inline' for scripts is required by Next.js hydration and the
   // inline dark-mode detection script. A nonce-based CSP would eliminate this

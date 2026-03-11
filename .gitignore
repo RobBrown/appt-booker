@@ -35,6 +35,9 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# private security exception log (never commit)
+.sec-exceptions.md
+
 # Sentry CLI
 .sentryclirc
 

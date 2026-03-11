@@ -63,7 +63,7 @@ const DETAIL_CONFIG: Record<
 > = {
   "in-person": {
     label: "Address and entry instructions",
-    placeholder: "123 Main St, Suite 200\nCity, Province\n\nEntry instructions (e.g. buzz unit 42, ask for reception)",
+    placeholder: "123 Main St, Suite 200\nCity, Province\nEntry instructions (e.g. buzz unit 42, ask for reception)",
     multiline: true,
   },
   phone: {
