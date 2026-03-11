@@ -74,3 +74,17 @@ All emails and SMS sent by the application follow a specific voice. The full ton
 ## Workflow Rule
 
 Read the current phase document in `phases/` before writing any code. The phase document is the authoritative instruction set for the current task. Complete the phase, then stop and wait for sign-off.
+
+---
+
+## Public Release Workflow
+
+The private repo (`hal866245/appt-booker`, remote `origin`) and the public repo (`RobBrown/appt-booker`, remote `public`) have **unrelated git histories**. Standard `git merge --squash` will fail with "refusing to merge unrelated histories". Always use the following procedure:
+
+1. `gh auth switch --user RobBrown`
+2. Create a staging branch from the public remote: `git checkout -b release-staging public/main`
+3. Snapshot the full current state from main: `git checkout main -- .`
+4. Commit with a clean release message — no `Co-Authored-By` lines, no security implementation details
+5. Push: `git push public release-staging:main`
+6. Switch back: `gh auth switch --user hal866245`
+7. Return to main and delete the staging branch: `git checkout main && git branch -d release-staging`
