@@ -8,7 +8,12 @@ So here we are. I built my own scheduling app. The approach I landed on is, I th
 
 TL;DR=
 
-Someone visits the page, picks a duration, chooses a date and time, fills in their details, and confirms. A Google Calendar event is created instantly. A confirmation email with an `.ics` attachment goes to them. A notification email lands in my inbox. The whole thing runs on infrastructure I control, and the only persistent store is my Google Calendar.
+Two paths, same result.
+
+1. A human visits the page, picks a time, fills in their details, and confirms.
+2. An AI agent connects via MCP and does the same thing in natural language. 
+
+Either way: a Google Calendar event is created, a confirmation email with an `.ics` attachment goes to the booker, and a notification lands in my inbox. The only persistent store is my Google Calendar.
 
 No database. No admin panel. No 3rd party privacy concerns. Just a Next.js app talking directly to APIs I was already using.
 
@@ -16,7 +21,9 @@ No database. No admin panel. No 3rd party privacy concerns. Just a Next.js app t
 
 ## The core idea
 
-Most scheduling tools solve the availability problem by introducing a database. They store your availability rules, your booked slots, your contacts, your preferences. They become the source of truth. You become dependent on their platform, their pricing, and their privacy policy.
+It should be easy for people to book a meeting with me. People shouldn't need to worry about providing their contact information. AI Agents should be able to book me too.
+
+The central problem: Most scheduling tools solve the availability problem by introducing a database. They store your availability rules, your booked slots, your contacts, your preferences. They become the source of truth. You become dependent on their platform, their pricing, and their privacy policy.
 
 I kept asking: why does a second database need to exist at all?
 
@@ -86,6 +93,8 @@ Each reminder send is isolated in a try/catch. One failure does not stop the oth
 | Booking storage | Google Calendar Events API |
 | Email | Gmail API via OAuth2 |
 | Virtual meetings | Zoom Server-to-Server OAuth, Google Meet API, Jitsi |
+| MCP server | `@modelcontextprotocol/sdk`, `mcp-handler` |
+| MCP auth | Clerk (OAuth 2.1, Google + Microsoft social login) |
 | Rate limiting | Upstash Redis (sliding window) |
 | Error monitoring | Sentry |
 | Hosting | Render.com |
@@ -139,6 +148,10 @@ GMAIL_USER=              # Your Gmail address
 ZOOM_ACCOUNT_ID=
 ZOOM_CLIENT_ID=
 ZOOM_CLIENT_SECRET=
+
+# Clerk (required for MCP server authentication)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=   # pk_live_... in production, pk_test_... in dev
+CLERK_SECRET_KEY=                    # sk_live_... in production, sk_test_... in dev
 
 # Rate limiting
 UPSTASH_REDIS_REST_URL=
@@ -207,6 +220,84 @@ A `200` response with `processed: 0` means the job ran successfully with no remi
 **Race condition handling.** Slot selection and booking confirmation are separated in time. Between the two, another visitor could take the same slot. The app re-queries Freebusy immediately before writing the calendar event and returns a `409` if the slot is gone, prompting the visitor to choose again.
 
 **Timezone correctness.** All times are stored as UTC in Google Calendar. The booker's selected timezone is recorded in the calendar event and used to display times correctly in emails and reminders. The `date-fns-tz` library handles all timezone-aware conversions using `fromZonedTime` to convert local selections to UTC before storage.
+
+---
+
+## MCP Server
+
+This app exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) endpoint so AI agents (Claude, ChatGPT, Cursor, etc.) can check availability, create bookings, look up bookings, reschedule, and cancel — all without visiting the web UI.
+
+### What is MCP?
+
+MCP is an open protocol that lets AI agents communicate with external tools and services in a standardised way. An agent that supports MCP can discover available tools, call them with structured arguments, and receive structured responses — just like a developer calling an API, but driven by the AI.
+
+### Endpoint
+
+```
+https://book.robisit.com/mcp
+```
+
+Transport: **Streamable HTTP** (the current MCP standard). Legacy SSE is also supported at `/sse`.
+
+### How to connect
+
+No API keys required. Users authenticate with their existing Google or Microsoft account:
+
+1. Point your MCP client at `https://book.robisit.com/mcp`
+2. The client will redirect you to sign in with Google or Microsoft via Clerk
+3. Approve access — you're connected
+
+Authentication is a one-time setup. Tokens are stored by the MCP client and refreshed automatically.
+
+**Claude Code (CLI):**
+
+```bash
+claude mcp add --transport http rob-brown https://book.robisit.com/mcp
+```
+
+**Claude Desktop (`claude_desktop_config.json`):**
+
+```json
+{
+  "mcpServers": {
+    "rob-brown": {
+      "type": "http",
+      "url": "https://book.robisit.com/mcp"
+    }
+  }
+}
+```
+
+**Using it naturally:**
+
+Once connected, just talk to your AI agent naturally — no need to name the server or reference tool names:
+
+> "Book a meeting with Rob Brown at his next available time."
+> "What times does Rob Brown have open next week for a 30-minute call?"
+> "Cancel my booking with Rob Brown — token is `abc123...`"
+
+The agent will use the correct tools automatically.
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `check_availability` | Check available appointment slots for a given date and duration |
+| `create_booking` | Book an appointment at a specific time (re-validates availability) |
+| `get_booking` | Look up an existing booking by its management token |
+| `reschedule_booking` | Move a booking to a new time |
+| `cancel_booking` | Cancel a booking permanently |
+
+### Discovery endpoints
+
+| Path | Purpose |
+|---|---|
+| `/.well-known/mcp.json` | MCP discovery payload — lists the endpoint URL and all tools |
+| `/.well-known/oauth-protected-resource` | OAuth 2.0 Protected Resource Metadata (RFC 9728) — used by MCP clients to find the Clerk authorization server |
+
+### Authentication
+
+Authentication uses **Clerk as the OAuth 2.1 authorization server** with Google and Microsoft social login. The MCP endpoint returns `401 Unauthorized` for any request without a valid token. Clerk tokens are validated on every request.
 
 ---
 

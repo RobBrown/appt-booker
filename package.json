@@ -9,6 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@clerk/mcp-tools": "^0.3.1",
+    "@clerk/nextjs": "^7.0.4",
     "@sentry/nextjs": "^10.42.0",
     "@tailwindcss/forms": "^0.5.11",
     "@upstash/ratelimit": "^2.0.8",
@@ -19,11 +21,13 @@
     "date-fns-tz": "^3.2.0",
     "googleapis": "^171.4.0",
     "lucide-react": "^0.577.0",
+    "mcp-handler": "^1.0.7",
     "next": "16.1.6",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

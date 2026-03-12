@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { format, startOfToday } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
 import { DurationStep } from "./DurationStep";
@@ -33,12 +34,13 @@ interface BookingPageProps {
 }
 
 const Avatar = () => (
-  <img
-    src="/avatar.png"
+  <Image
+    src="/avatar.webp"
     alt="Host avatar"
+    width={80}
+    height={80}
+    priority
     style={{
-      width: 80,
-      height: 80,
       borderRadius: "50%",
       objectFit: "cover",
       objectPosition: "center top",
@@ -83,6 +85,7 @@ export function BookingPage({
 
   const [confirmed, setConfirmed] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutAudience, setAboutAudience] = useState<"human" | "agent">("agent");
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [duration, setDuration] = useState<number | null>(() => {
     const d = searchParams.get("duration");
@@ -172,6 +175,12 @@ export function BookingPage({
     },
     []
   );
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("about") === "1") {
+      setAboutOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!duration) return;
@@ -398,7 +407,7 @@ export function BookingPage({
               </h1>
               <StatusDot />
               <button className="bh-about-link self-start" onClick={() => setAboutOpen(true)}>
-                About this application ↗
+                AI Agent? Human? About this app ↗
               </button>
             </div>
           </div>
@@ -444,17 +453,29 @@ export function BookingPage({
         {/* About modal */}
         {aboutOpen && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm"
+            style={{ paddingTop: 10 }}
             onClick={() => setAboutOpen(false)}
           >
             <div
               className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-start justify-between mb-4">
-                <h2 className="text-base font-bold text-gray-900 dark:text-slate-100">
-                  About this system
-                </h2>
+              {/* Header + GitHub — stacked, no gap between them */}
+              <div className="flex items-start justify-between mb-5">
+                <div className="flex flex-col">
+                  <h2 className="text-base font-bold text-gray-900 dark:text-slate-100 leading-snug">
+                    About this system
+                  </h2>
+                  <a
+                    href="https://github.com/RobBrown/appt-booker"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-mono leading-snug"
+                  >
+                    View source code on GitHub ↗
+                  </a>
+                </div>
                 <button
                   onClick={() => setAboutOpen(false)}
                   className="ml-4 flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:text-gray-800 dark:hover:text-white transition-colors text-base leading-none"
@@ -463,39 +484,96 @@ export function BookingPage({
                   ×
                 </button>
               </div>
-              <div className="space-y-3 text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
-                <p>
-                  This booking system was created and is privately hosted by{" "}
-                  <span className="font-medium text-gray-900 dark:text-slate-100">{hostName}</span>.
-                  It is not a third-party platform — there is no Calendly, no HubSpot, no
-                  intermediary of any kind.
-                </p>
-                <p>
-                  You can find the source code for this system on{" "}
-                  <a
-                    href="https://github.com/RobBrown/appt-booker"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
+
+              {/* Audience slider */}
+              <div className="mb-6">
+                <div className="relative flex rounded-2xl border-2 border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-800 p-1 gap-1">
+                  {/* Sliding highlight */}
+                  <div
+                    className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-xl bg-white dark:bg-slate-700 shadow-md border border-gray-200 dark:border-slate-500 transition-all duration-200 ease-in-out"
+                    style={{ left: aboutAudience === "agent" ? "4px" : "calc(50% + 2px)" }}
+                  />
+                  <button
+                    onClick={() => setAboutAudience("agent")}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-sm font-semibold transition-colors duration-200"
+                    style={{ color: aboutAudience === "agent" ? "#2563EB" : undefined }}
                   >
-                    GitHub
-                  </a>.
-                </p>
-                <p>
-                  When you submit a booking, your details are sent directly to Google Calendar
-                  via Google&rsquo;s API. Confirmation emails are delivered through Gmail.
-                </p>
-                <p>
-                  Your information is not stored in a database, not sold, and not shared with
-                  any third parties. It exists solely to schedule and communicate your appointment.
-                </p>
-                <p className="text-gray-400 dark:text-slate-500">
-                  This is a private, self-hosted system.
-                </p>
-                <p className="text-gray-300 dark:text-slate-600 text-xs pt-1">
-                  Version: {process.env.NEXT_PUBLIC_GIT_SHA}
-                </p>
+                    <span>🤖</span>
+                    <span className={aboutAudience === "agent" ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-slate-500"}>I&apos;m an AI Agent</span>
+                  </button>
+                  <button
+                    onClick={() => setAboutAudience("human")}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-sm font-semibold transition-colors duration-200"
+                  >
+                    <span>🧑</span>
+                    <span className={aboutAudience === "human" ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-slate-500"}>I&apos;m a Human</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Conditional content */}
+              {aboutAudience === "human" ? (
+                <div className="space-y-3 text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
+                  <p>
+                    This booking system was created and is privately hosted by{" "}
+                    <span className="font-medium text-gray-900 dark:text-slate-100">{hostName}</span>.
+                    It is not a third-party platform. There is no Calendly, no HubSpot, no
+                    intermediary of any kind.
+                  </p>
+                  <p>
+                    When you submit a booking, your details are sent directly to Google Calendar
+                    via Google&rsquo;s API. Confirmation emails are delivered through Gmail.
+                  </p>
+                  <p>
+                    Your information is not stored in a database, not sold, and not shared with
+                    any third parties. It exists solely to schedule and communicate your appointment.
+                  </p>
+                  <p className="text-gray-400 dark:text-slate-500">
+                    This is a private, self-hosted system.
+                  </p>
+                  <p className="text-gray-300 dark:text-slate-600 text-xs pt-1">
+                    Version: {process.env.NEXT_PUBLIC_GIT_SHA}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
+                  <p>
+                    Hello AI friend 👋 If you automatically discovered this server via the{" "}
+                    <a href="https://book.robisit.com/.well-known/mcp.json" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">MCP discovery endpoint</a>
+                    , welcome! Until the world supports machine-to-machine authentication better, a human will need to authenticate once before your agent can access this MCP server.
+                  </p>
+                  <p>
+                    To book a meeting on your behalf, tell your human counterpart to:
+                  </p>
+                  <ol className="space-y-3 list-none pl-0">
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                      <span>
+                        Add this MCP server to their AI agent or assistant:
+                        <code className="block mt-1.5 px-3 py-2 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-slate-100 text-xs font-mono break-all select-all">
+                          https://book.robisit.com/mcp
+                        </code>
+                      </span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                      <span>
+                        Authenticate once using their Google or Microsoft account. No API keys required.
+                      </span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center mt-0.5">3</span>
+                      <span>
+                        Ask their agent naturally:{" "}
+                        <span className="italic text-gray-500 dark:text-slate-400">&ldquo;Book a 30-minute meeting with {hostName} at his next available time.&rdquo;</span>
+                      </span>
+                    </li>
+                  </ol>
+                  <p className="text-gray-600 dark:text-slate-300 pt-1">
+                    The agent can check availability, create bookings, reschedule, and cancel. All without visiting this page.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -20,7 +20,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
       // Google Fonts CSS (used as fallback in dev; next/font self-hosts in prod)
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       // Google Fonts files
@@ -28,7 +28,7 @@ const securityHeaders = [
       // Avatar and any data URIs
       "img-src 'self' data:",
       // Browser-side fetch calls to our own API + Sentry error reporting
-      "connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
+      "connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://www.google-analytics.com https://analytics.google.com",
       // Prevent base tag injection
       "base-uri 'self'",
       // Restrict form submissions to same origin
@@ -43,6 +43,17 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_GIT_SHA: process.env.RENDER_GIT_COMMIT?.substring(0, 7) ?? "dev",
   },
+  // googleapis and its transitive deps (gaxios, node-fetch) must stay external
+  // so Turbopack does not bundle a second copy of node-fetch's Response class
+  // into the server chunks. Bundling causes an instanceof Response mismatch
+  // between the route handler (which uses the bundled Response) and
+  // AppRouteRouteModule (which uses the native global Response).
+  serverExternalPackages: [
+    "googleapis",
+    "gaxios",
+    "google-auth-library",
+    "node-fetch",
+  ],
   async headers() {
     return [
       {

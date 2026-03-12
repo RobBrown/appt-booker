@@ -7,8 +7,16 @@ import { checkRateLimit, limiters } from "@/lib/rate-limit";
 const VALID_DURATIONS = [15, 30, 60, 120];
 
 export async function GET(request: NextRequest) {
-  const limited = await checkRateLimit(limiters.availability, request);
-  if (limited) return limited;
+  try {
+    const limited = await checkRateLimit(limiters.availability, request);
+    if (limited) return limited;
+  } catch (rlErr) {
+    console.error("[availability] checkRateLimit threw:", rlErr);
+    return NextResponse.json(
+      { error: "Rate limit service unavailable." },
+      { status: 503 }
+    );
+  }
 
   try {
     const { searchParams } = request.nextUrl;
@@ -69,7 +77,12 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    Sentry.captureException(error);
+    console.error("[availability] error:", error);
+    try {
+      Sentry.captureException(error);
+    } catch (sentryErr) {
+      console.error("[availability] Sentry.captureException threw:", sentryErr);
+    }
     return NextResponse.json(
       { error: "Failed to fetch availability." },
       { status: 500 }
