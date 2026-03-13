@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import { sendEmail, escapeHtml, formatDate, formatTime, formatSummaryText, formatSummaryHtml } from "@/lib/gmail";
+import {
+  sendEmail,
+  escapeHtml,
+  firstNameOf,
+  formatDateParts,
+  formatTimeWithTz,
+  formatDateTimeLine,
+  formatLocationLine,
+  renderEmailHtml,
+} from "@/lib/gmail";
+import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -17,6 +27,7 @@ export async function POST(request: NextRequest) {
       timezone,
       locationType,
       locationDetails = "",
+      additionalAttendees = [],
     } = body;
 
     if (!bookerName || !bookerEmail || !startTime || !duration || !timezone || !locationType) {
@@ -24,87 +35,160 @@ export async function POST(request: NextRequest) {
     }
 
     const start = new Date(startTime);
+    const end = addMinutes(start, duration);
     const hostName = process.env.HOST_NAME ?? "Your host";
+    const hostEmail = process.env.GMAIL_USER!;
     const hostDomain = process.env.HOST_DOMAIN ?? "";
-    const dateStr = formatDate(start, timezone);
-    const timeStr = formatTime(start, timezone);
+    const hostTimezone = process.env.HOST_TIMEZONE ?? timezone;
+    const bookUrl = `${hostDomain}/book`;
 
-    const summaryOpts = {
-      bookerName,
-      startTime: start,
-      duration,
-      timezone,
-      locationType,
-      locationDetails,
-    };
+    const firstName = firstNameOf(bookerName);
+
+    // Booker-timezone values
+    const { dayOfWeek, monthDay } = formatDateParts(start, timezone);
+    const time = formatTimeWithTz(start, timezone);
+    const dateTimeLine = formatDateTimeLine(start, end, timezone);
+    const locationLine = formatLocationLine(locationType, locationDetails);
+
+    // Host-timezone values
+    const hostParts = formatDateParts(start, hostTimezone);
+    const hostTime = formatTimeWithTz(start, hostTimezone);
+    const hostDateTimeLine = formatDateTimeLine(start, end, hostTimezone);
+
+    // Attendees rows
+    const attendeeLines = [
+      `${hostName}, ${hostEmail}`,
+      `${bookerName}, ${bookerEmail}`,
+    ];
 
     // -------------------------------------------------------------------------
-    // Email to booker
+    // Email 05: Cancellation — Host
     // -------------------------------------------------------------------------
-    const bookerText = [
-      `Hi ${bookerName},`,
-      ``,
-      `Your ${duration}-minute meeting with ${hostName} on ${dateStr} at ${timeStr} has been cancelled.`,
-      ``,
-      ...(hostDomain ? [`If you'd like to book another time:`, hostDomain] : []),
+    const hostSubject = `Cancelled: ${bookerName} on ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}`;
+
+    const hostHtml = renderEmailHtml({
+      headerLabel: "Booking Cancelled",
+      bodyHtml: `${escapeHtml(bookerName)} cancelled the booking on ${escapeHtml(hostParts.dayOfWeek)}, ${escapeHtml(hostParts.monthDay)} at ${escapeHtml(hostTime)}.`,
+      detailRows: [
+        {
+          label: "Attendees",
+          valueHtml: attendeeLines.map(escapeHtml).join("<br>"),
+        },
+        { label: "Date & Time", value: hostDateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", value: locationLine },
+      ],
+      closingHtml: "The calendar event has been removed.",
+    });
+
+    const hostText = [
+      "Booking Cancelled",
+      "",
+      `${bookerName} cancelled the booking on ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}.`,
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${hostDateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      "",
+      "The calendar event has been removed.",
     ].join("\n");
 
-    const bookerHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#111827">Booking cancelled</h1>
-    <p style="margin:0 0 28px;color:#6B7280">Your meeting with ${hostName} has been cancelled.</p>
-    ${hostDomain ? `
-    <div style="margin:32px 0;border-top:1px solid #E5E7EB"></div>
-    <p style="margin:0 0 12px;color:#6B7280;font-size:14px">Need to book a new time?</p>
-    <a href="${hostDomain}" style="display:inline-block;padding:10px 20px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500">Book another time</a>
-    ` : ""}
-  </div>
-</body>
-</html>`;
+    await sendEmail({
+      to: hostEmail,
+      subject: hostSubject,
+      text: hostText,
+      html: hostHtml,
+    });
+
+    // -------------------------------------------------------------------------
+    // Email 06: Cancellation — Booker
+    // -------------------------------------------------------------------------
+    const bookerSubject = `Booking cancelled \u2014 ${dayOfWeek}, ${monthDay} at ${time}`;
+
+    const bookerHtml = renderEmailHtml({
+      headerLabel: "Booking Cancelled",
+      bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Your booking on ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(time)} has been cancelled. The calendar event has been removed.`,
+      detailRows: [
+        {
+          label: "Attendees",
+          valueHtml: attendeeLines.map(escapeHtml).join("<br>"),
+        },
+        { label: "Date & Time", value: dateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", value: locationLine },
+      ],
+      button: { text: "Book a New Time", url: bookUrl },
+      afterBlockHtml: "If you\u2019d like to find another time, the booking page is always open.",
+    });
+
+    const bookerText = [
+      "Booking Cancelled",
+      "",
+      `Hi ${firstName},`,
+      "",
+      `Your booking on ${dayOfWeek}, ${monthDay} at ${time} has been cancelled. The calendar event has been removed.`,
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${dateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      "",
+      `Book a New Time: ${bookUrl}`,
+      "",
+      "If you'd like to find another time, the booking page is always open.",
+    ].join("\n");
 
     await sendEmail({
       to: bookerEmail,
-      subject: `Your meeting with ${hostName} has been cancelled`,
+      subject: bookerSubject,
       text: bookerText,
       html: bookerHtml,
     });
 
-    // -------------------------------------------------------------------------
-    // Email to host
-    // -------------------------------------------------------------------------
-    const hostText = [
-      `Cancelled: ${bookerName}`,
-      ``,
-      formatSummaryText(summaryOpts),
-      ``,
-      `Booker email: ${bookerEmail}`,
-    ].join("\n");
+    // Additional attendee cancellation emails
+    const extraAttendees = (additionalAttendees as Array<{ name: string; email?: string }>)
+      .filter((a) => a.email);
 
-    const hostHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">Cancelled: ${escapeHtml(bookerName)}</h1>
+    for (const attendee of extraAttendees) {
+      const attendeeFirstName = firstNameOf(attendee.name);
+      const attendeeHtml = renderEmailHtml({
+        headerLabel: "Meeting Cancelled",
+        bodyHtml: `Hi ${escapeHtml(attendeeFirstName)},<br><br>A meeting you were attending on ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(time)} has been cancelled. The calendar event has been removed.`,
+        detailRows: [
+          { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+          { label: "Date & Time", value: dateTimeLine },
+          { label: "Duration", value: `${duration} minutes` },
+          { label: "Location", value: locationLine },
+        ],
+      });
 
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(summaryOpts)}
-    </div>
+      const attendeeText = [
+        "Meeting Cancelled",
+        "",
+        `Hi ${attendeeFirstName},`,
+        "",
+        `A meeting you were attending on ${dayOfWeek}, ${monthDay} at ${time} has been cancelled. The calendar event has been removed.`,
+        "",
+        "Attendees:",
+        ...attendeeLines,
+        "",
+        `Date & Time: ${dateTimeLine}`,
+        `Duration: ${duration} minutes`,
+        `Location: ${locationLine}`,
+      ].join("\n");
 
-    <p style="margin:16px 0 0;color:#6B7280;font-size:13px">Booker email: <a href="mailto:${escapeHtml(bookerEmail)}" style="color:#2563EB">${escapeHtml(bookerEmail)}</a></p>
-  </div>
-</body>
-</html>`;
-
-    await sendEmail({
-      to: process.env.GMAIL_USER!,
-      subject: `Cancelled: ${bookerName} — ${dateStr} at ${timeStr}`,
-      text: hostText,
-      html: hostHtml,
-    });
+      await sendEmail({
+        to: attendee.email!,
+        subject: `Meeting cancelled \u2014 ${dayOfWeek}, ${monthDay} at ${time}`,
+        text: attendeeText,
+        html: attendeeHtml,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

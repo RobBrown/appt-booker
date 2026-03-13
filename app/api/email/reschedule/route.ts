@@ -4,12 +4,16 @@ import {
   sendEmail,
   buildIcs,
   escapeHtml,
-  formatDate,
-  formatTime,
+  firstNameOf,
+  formatDateParts,
+  formatTimeWithTz,
+  formatDateTimeLine,
   formatLocationLine,
-  formatSummaryText,
-  formatSummaryHtml,
+  formatLocationHtml,
+  ordinalSuffix,
+  renderEmailHtml,
 } from "@/lib/gmail";
+import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -21,19 +25,20 @@ export async function POST(request: NextRequest) {
     const {
       bookerName,
       bookerEmail,
-      oldStartTime,
+      bookerPhone = "",
       newStartTime,
       duration,
       timezone,
       locationType,
       locationDetails = "",
+      additionalAttendees = [],
+      description = "",
       token,
     } = body;
 
     if (
       !bookerName ||
       !bookerEmail ||
-      !oldStartTime ||
       !newStartTime ||
       !duration ||
       !timezone ||
@@ -43,117 +48,205 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
-    const oldStart = new Date(oldStartTime);
     const newStart = new Date(newStartTime);
+    const newEnd = addMinutes(newStart, duration);
     const hostName = process.env.HOST_NAME ?? "Your host";
+    const hostEmail = process.env.GMAIL_USER!;
     const hostDomain = process.env.HOST_DOMAIN ?? "";
-    const locationLine = formatLocationLine(locationType, locationDetails);
-    const oldDateStr = formatDate(oldStart, timezone);
-    const oldTimeStr = formatTime(oldStart, timezone);
-    const newDateStr = formatDate(newStart, timezone);
-    const newTimeStr = formatTime(newStart, timezone);
+    const hostTimezone = process.env.HOST_TIMEZONE ?? timezone;
     const manageUrl = `${hostDomain}/manage/${token}`;
 
-    const summaryOpts = {
-      bookerName,
-      startTime: newStart,
-      duration,
-      timezone,
-      locationType,
-      locationDetails,
-    };
+    const firstName = firstNameOf(bookerName);
+
+    // Booker-timezone values
+    const { dayOfWeek, monthDay, dayNumber } = formatDateParts(newStart, timezone);
+    const time = formatTimeWithTz(newStart, timezone);
+    const dateTimeLine = formatDateTimeLine(newStart, newEnd, timezone);
+    const locationHtml = formatLocationHtml(locationType, locationDetails);
+
+    // Host-timezone values
+    const hostParts = formatDateParts(newStart, hostTimezone);
+    const hostTime = formatTimeWithTz(newStart, hostTimezone);
+    const hostDateTimeLine = formatDateTimeLine(newStart, newEnd, hostTimezone);
+    const locationLine = formatLocationLine(locationType, locationDetails);
+
+    // Attendees
+    const attendeeLines = [
+      `${hostName}, ${hostEmail}`,
+      `${bookerName}, ${bookerEmail}`,
+      ...(additionalAttendees as Array<{ name: string; email?: string }>)
+        .map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+    ];
 
     // -------------------------------------------------------------------------
-    // ICS for booker (same UID = same token, so calendar apps update the event)
+    // Email 03: Reschedule — Host
     // -------------------------------------------------------------------------
+    const hostSubject = `Rescheduled: ${bookerName} moved to ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}`;
+
+    const hostHtml = renderEmailHtml({
+      headerLabel: "Booking Rescheduled",
+      bodyHtml: `${escapeHtml(bookerName)} rescheduled. The new time is ${escapeHtml(hostParts.dayOfWeek)}, ${escapeHtml(hostParts.monthDay)} at ${escapeHtml(hostTime)}.`,
+      detailRows: [
+        {
+          label: "Attendees",
+          valueHtml: attendeeLines.map(escapeHtml).join("<br>"),
+        },
+        { label: "Date & Time", value: hostDateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", value: locationLine },
+        ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+        ...(description ? [{ label: "Topic", value: description }] : []),
+      ],
+      closingHtml: "The calendar has been updated.",
+    });
+
+    const hostText = [
+      "Booking Rescheduled",
+      "",
+      `${bookerName} rescheduled. The new time is ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}.`,
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${hostDateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+      ...(description ? [`Topic: ${description}`] : []),
+      "",
+      "The calendar has been updated.",
+    ].join("\n");
+
+    await sendEmail({
+      to: hostEmail,
+      subject: hostSubject,
+      text: hostText,
+      html: hostHtml,
+    });
+
+    // -------------------------------------------------------------------------
+    // Email 04: Reschedule — Booker
+    // -------------------------------------------------------------------------
+    const bookerSubject = `Booking moved \u2014 ${dayOfWeek}, ${monthDay} at ${time}`;
+
+    // ICS with same UID (token) so calendar apps update the existing event
     const icsContent = buildIcs({
       uid: token,
       startTime: newStart,
       duration,
       summary: `Meeting with ${hostName}`,
-      description: `Meeting with ${hostName}\nDate: ${newDateStr}`,
+      description: [
+        `Meeting with ${hostName}`,
+        ...(description ? [`Topic: ${description}`] : []),
+      ].join("\n"),
       location: locationLine,
-      organizerEmail: process.env.GMAIL_USER!,
+      organizerEmail: hostEmail,
       attendeeEmail: bookerEmail,
       attendeeName: bookerName,
     });
 
-    // -------------------------------------------------------------------------
-    // Email to booker
-    // -------------------------------------------------------------------------
+    const bookerHtml = renderEmailHtml({
+      headerLabel: "Booking Rescheduled",
+      bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Your booking has been moved to ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(time)}.<br><br>Updated details are below, and a new calendar invite is attached.`,
+      detailRows: [
+        {
+          label: "Attendees",
+          valueHtml: attendeeLines.map(escapeHtml).join("<br>"),
+        },
+        { label: "Date & Time", value: dateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", valueHtml: locationHtml },
+        ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+        ...(description ? [{ label: "Topic", value: description }] : []),
+      ],
+      button: { text: "Manage Booking", url: manageUrl },
+      afterBlockHtml: "If anything else needs to change, use the Manage Booking button above or reply to this email.",
+      closingHtml: `See you on the ${ordinalSuffix(dayNumber)}!`,
+    });
+
     const bookerText = [
-      `Hi ${bookerName},`,
-      ``,
-      `Your meeting with ${hostName} has been rescheduled.`,
-      ``,
-      formatSummaryText(summaryOpts),
-      ``,
-      `If you need to make another change:`,
-      manageUrl,
+      "Booking Rescheduled",
+      "",
+      `Hi ${firstName},`,
+      "",
+      `Your booking has been moved to ${dayOfWeek}, ${monthDay} at ${time}.`,
+      "",
+      "Updated details are below, and a new calendar invite is attached.",
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${dateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+      ...(description ? [`Topic: ${description}`] : []),
+      "",
+      `Manage Booking: ${manageUrl}`,
+      "",
+      "If anything else needs to change, use the Manage Booking button above or reply to this email.",
+      "",
+      `See you on the ${ordinalSuffix(dayNumber)}!`,
     ].join("\n");
-
-    const bookerHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#111827">You're rescheduled with ${hostName}</h1>
-    <p style="margin:0 0 28px;color:#6B7280">Here are the updated details.</p>
-
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(summaryOpts)}
-    </div>
-
-    <div style="margin:32px 0;border-top:1px solid #E5E7EB"></div>
-    <p style="margin:0 0 12px;color:#6B7280;font-size:14px">Need to make another change?</p>
-    <a href="${manageUrl}" style="display:inline-block;padding:10px 20px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500">Cancel or reschedule</a>
-  </div>
-</body>
-</html>`;
 
     await sendEmail({
       to: bookerEmail,
-      subject: `Your meeting with ${hostName} has been rescheduled — ${newDateStr} at ${newTimeStr}`,
+      subject: bookerSubject,
       text: bookerText,
       html: bookerHtml,
       icsContent,
     });
 
-    // -------------------------------------------------------------------------
-    // Email to host
-    // -------------------------------------------------------------------------
-    const hostText = [
-      `Rescheduled: ${bookerName}`,
-      ``,
-      formatSummaryText(summaryOpts),
-      ``,
-      `Booker email: ${bookerEmail}`,
-      `Previously: ${oldDateStr} at ${oldTimeStr}`,
-    ].join("\n");
+    // Additional attendee reschedule emails
+    const extraAttendees = (additionalAttendees as Array<{ name: string; email?: string }>)
+      .filter((a) => a.email);
 
-    const hostHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">Rescheduled: ${escapeHtml(bookerName)}</h1>
+    for (const attendee of extraAttendees) {
+      const attendeeFirstName = firstNameOf(attendee.name);
+      const attendeeHtml = renderEmailHtml({
+        headerLabel: "Meeting Rescheduled",
+        bodyHtml: `Hi ${escapeHtml(attendeeFirstName)},<br><br>A meeting you're attending has been moved to ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(time)}. Updated details are below, and a new calendar invite is attached.`,
+        detailRows: [
+          { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+          { label: "Date & Time", value: dateTimeLine },
+          { label: "Duration", value: `${duration} minutes` },
+          { label: "Location", valueHtml: locationHtml },
+          ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+          ...(description ? [{ label: "Topic", value: description }] : []),
+        ],
+        afterBlockHtml: "If anything else needs to change, reply to this email.",
+        closingHtml: `See you on the ${ordinalSuffix(dayNumber)}!`,
+      });
 
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(summaryOpts)}
-    </div>
+      const attendeeText = [
+        "Meeting Rescheduled",
+        "",
+        `Hi ${attendeeFirstName},`,
+        "",
+        `A meeting you're attending has been moved to ${dayOfWeek}, ${monthDay} at ${time}. Updated details are below, and a new calendar invite is attached.`,
+        "",
+        "Attendees:",
+        ...attendeeLines,
+        "",
+        `Date & Time: ${dateTimeLine}`,
+        `Duration: ${duration} minutes`,
+        `Location: ${locationLine}`,
+        ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+        ...(description ? [`Topic: ${description}`] : []),
+        "",
+        "If anything else needs to change, reply to this email.",
+        "",
+        `See you on the ${ordinalSuffix(dayNumber)}!`,
+      ].join("\n");
 
-    <p style="margin:16px 0 0;color:#6B7280;font-size:13px">Booker email: <a href="mailto:${escapeHtml(bookerEmail)}" style="color:#2563EB">${escapeHtml(bookerEmail)}</a></p>
-    <p style="margin:8px 0 0;color:#6B7280;font-size:13px">Previously: ${oldDateStr} at ${oldTimeStr}</p>
-  </div>
-</body>
-</html>`;
-
-    await sendEmail({
-      to: process.env.GMAIL_USER!,
-      subject: `Rescheduled: ${bookerName} — now ${newDateStr} at ${newTimeStr}`,
-      text: hostText,
-      html: hostHtml,
-    });
+      await sendEmail({
+        to: attendee.email!,
+        subject: `Meeting moved \u2014 ${dayOfWeek}, ${monthDay} at ${time}`,
+        text: attendeeText,
+        html: attendeeHtml,
+        icsContent,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

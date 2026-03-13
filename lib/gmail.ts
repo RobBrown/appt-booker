@@ -268,3 +268,170 @@ export function formatSummaryHtml(opts: SummaryOptions): string {
 
   return html;
 }
+
+// ---------------------------------------------------------------------------
+// Spec-compliant email helpers
+// ---------------------------------------------------------------------------
+
+/** Extract the first word of a full name for "Hi {firstName}" greetings. */
+export function firstNameOf(fullName: string): string {
+  return fullName.split(" ")[0] ?? fullName;
+}
+
+/** Return the short timezone abbreviation for a point in time, e.g. "EST". */
+export function getTzAbbr(date: Date, timezone: string): string {
+  return (
+    new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(date)
+      .find((p) => p.type === "timeZoneName")?.value ?? timezone
+  );
+}
+
+/**
+ * Format a time with its timezone abbreviation, e.g. "2:00 PM EST".
+ * Used in email subjects and body copy.
+ */
+export function formatTimeWithTz(date: Date, timezone: string): string {
+  return `${formatInTimeZone(date, timezone, "h:mm a")} ${getTzAbbr(date, timezone)}`;
+}
+
+/**
+ * Format a compact time range with timezone abbreviation, e.g. "2:00 – 2:30 PM EST".
+ * The start time omits AM/PM; the end time carries it along with the TZ abbreviation.
+ */
+export function formatTimeRangeWithTz(start: Date, end: Date, timezone: string): string {
+  const startStr = formatInTimeZone(start, timezone, "h:mm");
+  const endStr = formatInTimeZone(end, timezone, "h:mm a");
+  const tzAbbr = getTzAbbr(start, timezone);
+  return `${startStr} \u2013 ${endStr} ${tzAbbr}`;
+}
+
+/**
+ * Parse individual date components for use in subjects and body text.
+ * Returns dayOfWeek ("Thursday"), monthDay ("March 12"), year ("2026"), dayNumber (12).
+ */
+export function formatDateParts(
+  date: Date,
+  timezone: string
+): { dayOfWeek: string; monthDay: string; year: string; dayNumber: number } {
+  return {
+    dayOfWeek: formatInTimeZone(date, timezone, "EEEE"),
+    monthDay: formatInTimeZone(date, timezone, "MMMM d"),
+    year: formatInTimeZone(date, timezone, "yyyy"),
+    dayNumber: Number(formatInTimeZone(date, timezone, "d")),
+  };
+}
+
+/**
+ * Format the "Date & Time" details-block value per spec:
+ * "Thursday, March 12, 2026 · 2:00 – 2:30 PM EST"
+ */
+export function formatDateTimeLine(start: Date, end: Date, timezone: string): string {
+  const { dayOfWeek, monthDay, year } = formatDateParts(start, timezone);
+  const timeRange = formatTimeRangeWithTz(start, end, timezone);
+  return `${dayOfWeek}, ${monthDay}, ${year} \u00b7 ${timeRange}`;
+}
+
+/** Return the ordinal suffix for a day number: 1st, 2nd, 3rd, 4th, 11th, 21st, etc. */
+export function ordinalSuffix(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+// ---------------------------------------------------------------------------
+// Shared HTML email renderer (spec-compliant table layout)
+// ---------------------------------------------------------------------------
+
+export interface EmailDetailRow {
+  /** Uppercase label, e.g. "DATE & TIME" */
+  label: string;
+  /** Plain-text value (will be escaped) — use valueHtml for rich content */
+  value?: string;
+  /** Raw HTML value (not escaped) — used for links, line breaks, etc. */
+  valueHtml?: string;
+}
+
+export interface EmailRenderOptions {
+  /** Small label at the top of the email, e.g. "New Booking" */
+  headerLabel: string;
+  /** Paragraphs of body copy as HTML strings (already safe) */
+  bodyHtml: string;
+  /** Rows in the details block */
+  detailRows: EmailDetailRow[];
+  /** Optional CTA button inside the details block */
+  button?: { text: string; url: string };
+  /** Optional HTML rendered after the details block */
+  afterBlockHtml?: string;
+  /** Optional closing paragraph rendered last */
+  closingHtml?: string;
+}
+
+/**
+ * Render a complete HTML email per the transactional email spec.
+ * Table-based layout, all styles inline.
+ */
+export function renderEmailHtml(opts: EmailRenderOptions): string {
+  const detailRowsHtml = opts.detailRows
+    .map((row) => {
+      const val = row.valueHtml ?? escapeHtml(row.value ?? "");
+      return `<tr>
+          <td style="padding:10px 20px 0 0;font-size:12px;color:#8a8a86;text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;vertical-align:top">${escapeHtml(row.label)}</td>
+          <td style="padding:10px 0 0 0;font-size:15px;color:#1a1a18;line-height:1.5;vertical-align:top">${val}</td>
+        </tr>`;
+    })
+    .join("\n");
+
+  const buttonHtml = opts.button
+    ? `<tr>
+        <td colspan="2" style="padding:20px 0 0 0">
+          <a href="${escapeHtml(opts.button.url)}" style="display:inline-block;padding:10px 22px;background:#1a1a18;color:#ffffff;text-decoration:none;border-radius:4px;font-size:14px;font-weight:500;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">${escapeHtml(opts.button.text)}</a>
+        </td>
+      </tr>`
+    : "";
+
+  const afterBlockHtml = opts.afterBlockHtml
+    ? `<p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#1a1a18">${opts.afterBlockHtml}</p>`
+    : "";
+
+  const closingHtml = opts.closingHtml
+    ? `<p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#1a1a18">${opts.closingHtml}</p>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f9f9f8;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9f9f8;padding:40px 20px">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:6px;border:1px solid #e8e8e6">
+          <tr>
+            <td style="padding:40px 40px 32px">
+              <p style="margin:0 0 20px;font-size:13px;color:#8a8a86;letter-spacing:0.02em">${escapeHtml(opts.headerLabel)}</p>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#1a1a18">${opts.bodyHtml}</p>
+              <table cellpadding="0" cellspacing="0" width="100%" style="background-color:#f9f9f8;border-radius:4px;border:1px solid #eeeeec">
+                <tr>
+                  <td style="padding:20px 24px">
+                    <table cellpadding="0" cellspacing="0" width="100%">
+                      ${detailRowsHtml}
+                      ${buttonHtml}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              ${afterBlockHtml}
+              ${closingHtml}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}

@@ -17,12 +17,14 @@ import {
   sendEmail,
   buildIcs,
   escapeHtml,
-  formatDate,
-  formatTime,
-  formatOrdinalDateTime,
+  firstNameOf,
+  formatDateParts,
+  formatTimeWithTz,
+  formatDateTimeLine,
   formatLocationLine,
-  formatSummaryText,
-  formatSummaryHtml,
+  formatLocationHtml,
+  ordinalSuffix,
+  renderEmailHtml,
 } from "@/lib/gmail";
 
 // ---------------------------------------------------------------------------
@@ -208,14 +210,14 @@ export async function createBooking(
   ].join(", ");
 
   const locationLine = formatLocationLine(locationType, locationDetails);
-  const dateTimeLine = formatOrdinalDateTime(start, timezone);
+  const calEventDateTimeLine = formatDateTimeLine(start, end, timezone);
   const manageUrl = hostDomain ? `${hostDomain}/manage/${token}` : "";
 
   const descParts: string[] = [
     attendeeNames,
     ...(safeDescription ? [safeDescription] : []),
     "",
-    dateTimeLine,
+    calEventDateTimeLine,
     `${duration} minutes`,
     "",
     locationLine,
@@ -255,6 +257,8 @@ export async function createBooking(
               bookerEmail,
               bookerPhone,
               duration: String(duration),
+              description: safeDescription,
+              additionalAttendeesJson: JSON.stringify(additionalAttendees),
             },
           },
         },
@@ -276,121 +280,175 @@ export async function createBooking(
     }
   }
 
-  // Send confirmation email — same logic as /api/email/confirmation (non-fatal)
-  const dateStr = formatDate(start, timezone);
-  const startTimeStr = formatTime(start, timezone);
-  const summaryOpts = {
-    bookerName,
-    additionalAttendees,
-    description: safeDescription,
-    startTime: start,
-    duration,
-    timezone,
-    locationType,
-    locationDetails,
-    bookerPhone,
-  };
+  // Send confirmation email (Email 02 — Booker) — non-fatal
+  const hostEmailAddr = process.env.GMAIL_USER!;
+  const firstName = firstNameOf(bookerName);
+  const { dayOfWeek, monthDay, dayNumber } = formatDateParts(start, timezone);
+  const emailTime = formatTimeWithTz(start, timezone);
+  const emailDateTimeLine = formatDateTimeLine(start, end, timezone);
+  const locationHtml = formatLocationHtml(locationType, locationDetails);
 
-  const emailText = [
-    `Hi ${bookerName},`,
-    ``,
-    `You're all set. Here are the details for your meeting with ${hostName}.`,
-    ``,
-    formatSummaryText(summaryOpts),
-    ``,
-    `If anything comes up, you can cancel or reschedule here:`,
-    manageUrl,
-  ].join("\n");
-
-  const emailHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#111827">You're booked with ${hostName}</h1>
-    <p style="margin:0 0 28px;color:#6B7280">Here are your meeting details.</p>
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(summaryOpts)}
-    </div>
-    <div style="margin:32px 0;border-top:1px solid #E5E7EB"></div>
-    <p style="margin:0 0 12px;color:#6B7280;font-size:14px">Need to change your plans?</p>
-    <a href="${manageUrl}" style="display:inline-block;padding:10px 20px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500">Cancel or reschedule</a>
-  </div>
-</body>
-</html>`;
-
-  const allAttendees = [
-    { name: bookerName, email: bookerEmail },
-    ...additionalAttendees,
+  const attendeeLines = [
+    `${hostName}, ${hostEmailAddr}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
   ];
-  const icsDescription = [
-    `Meeting with ${hostName}`,
-    `Date: ${dateStr}`,
-    safeDescription ? `\nPurpose: ${safeDescription}` : "",
-    additionalAttendees.length > 0
-      ? `\nAttendees:\n${allAttendees.map((a) => `${a.name}${a.email ? ` <${a.email}>` : ""}`).join(", ")}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
 
   const icsContent = buildIcs({
     uid: token,
     startTime: start,
     duration,
     summary: `Meeting with ${hostName}`,
-    description: icsDescription,
+    description: [
+      `Meeting with ${hostName}`,
+      ...(safeDescription ? [`Topic: ${safeDescription}`] : []),
+    ].join("\n"),
     location: locationLine,
-    organizerEmail: process.env.GMAIL_USER!,
+    organizerEmail: hostEmailAddr,
     attendeeEmail: bookerEmail,
     attendeeName: bookerName,
   });
 
+  const confirmationHtml = renderEmailHtml({
+    headerLabel: "Booking Confirmation",
+    bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Thanks for booking time on ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(emailTime)}.<br><br>The full details are below, and a calendar invite is attached.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Date & Time", value: emailDateTimeLine },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", valueHtml: locationHtml },
+      ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+      ...(safeDescription ? [{ label: "Topic", value: safeDescription }] : []),
+    ],
+    button: { text: "Manage Booking", url: manageUrl },
+    afterBlockHtml: `Feel free to forward this invitation to anyone else that should attend.<br><br>If anything changes on your end, you can reschedule or cancel using your calendar or using the Manage Booking button above. Or, let me know with a quick reply to this email.`,
+    closingHtml: `See you on the ${ordinalSuffix(dayNumber)}!`,
+  });
+
+  const confirmationText = [
+    "Booking Confirmation",
+    "",
+    `Hi ${firstName},`,
+    "",
+    `Thanks for booking time on ${dayOfWeek}, ${monthDay} at ${emailTime}.`,
+    "",
+    "The full details are below, and a calendar invite is attached.",
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    "",
+    `Date & Time: ${emailDateTimeLine}`,
+    `Duration: ${duration} minutes`,
+    `Location: ${locationLine}`,
+    ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+    ...(safeDescription ? [`Topic: ${safeDescription}`] : []),
+    "",
+    `Manage Booking: ${manageUrl}`,
+    "",
+    "Feel free to forward this invitation to anyone else that should attend.",
+    "",
+    "If anything changes on your end, you can reschedule or cancel using your calendar or using the Manage Booking button above. Or, let me know with a quick reply to this email.",
+    "",
+    `See you on the ${ordinalSuffix(dayNumber)}!`,
+  ].join("\n");
+
   sendEmail({
     to: bookerEmail,
-    subject: `You're booked with ${hostName} — ${dateStr} at ${startTimeStr}`,
-    text: emailText,
-    html: emailHtml,
+    subject: `Booking confirmed \u2014 ${dayOfWeek}, ${monthDay} at ${emailTime}`,
+    text: confirmationText,
+    html: confirmationHtml,
     icsContent,
   }).catch((err) => console.error("Failed to send booking confirmation email:", err));
 
-  // Host notification — same logic as /api/email/notification (non-fatal)
-  const notificationSummaryOpts = {
-    bookerName,
-    additionalAttendees,
-    description: safeDescription,
-    startTime: start,
-    duration,
-    timezone,
-    locationType,
-    locationDetails,
-  };
+  // Host notification (Email 01 — Host) — non-fatal
+  const emailHostTimezone = process.env.HOST_TIMEZONE ?? timezone;
+  const hostParts = formatDateParts(start, emailHostTimezone);
+  const hostTime = formatTimeWithTz(start, emailHostTimezone);
+  const hostDateTimeLine = formatDateTimeLine(start, end, emailHostTimezone);
+
+  const notificationHtml = renderEmailHtml({
+    headerLabel: "New Booking",
+    bodyHtml: `${escapeHtml(bookerName)} booked time with you on ${escapeHtml(hostParts.dayOfWeek)}, ${escapeHtml(hostParts.monthDay)} at ${escapeHtml(hostTime)}.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Date & Time", value: hostDateTimeLine },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", value: locationLine },
+      ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+      ...(safeDescription ? [{ label: "Topic", value: safeDescription }] : []),
+    ],
+    closingHtml: "It's on the calendar.",
+  });
+
   const notificationText = [
-    `New booking: ${bookerName}`,
-    ``,
-    formatSummaryText(notificationSummaryOpts),
-    ``,
-    `Booker email: ${bookerEmail}`,
+    "New Booking",
+    "",
+    `${bookerName} booked time with you on ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    "",
+    `Date & Time: ${hostDateTimeLine}`,
+    `Duration: ${duration} minutes`,
+    `Location: ${locationLine}`,
+    ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+    ...(safeDescription ? [`Topic: ${safeDescription}`] : []),
+    "",
+    "It's on the calendar.",
   ].join("\n");
-  const notificationHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">New booking: ${escapeHtml(bookerName)}</h1>
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(notificationSummaryOpts)}
-    </div>
-    <p style="margin:16px 0 0;color:#6B7280;font-size:13px">Booker email: <a href="mailto:${escapeHtml(bookerEmail)}" style="color:#2563EB">${escapeHtml(bookerEmail)}</a></p>
-  </div>
-</body>
-</html>`;
+
   sendEmail({
-    to: process.env.GMAIL_USER!,
-    subject: `New booking: ${bookerName} — ${dateStr}`,
+    to: hostEmailAddr,
+    subject: `New booking: ${bookerName} on ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}`,
     text: notificationText,
     html: notificationHtml,
   }).catch((err) => console.error("Failed to send host notification email:", err));
+
+  // Additional attendee invitation emails — non-fatal
+  const extraAttendees = additionalAttendees.filter((a) => a.email);
+  for (const attendee of extraAttendees) {
+    const attendeeFirstName = firstNameOf(attendee.name);
+    const attendeeHtml = renderEmailHtml({
+      headerLabel: "Meeting Invitation",
+      bodyHtml: `Hi ${escapeHtml(attendeeFirstName)},<br><br>You've been added as a participant in a meeting on ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(emailTime)}. Details are below, and a calendar invite is attached.`,
+      detailRows: [
+        { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+        { label: "Date & Time", value: emailDateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", valueHtml: locationHtml },
+        ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+        ...(safeDescription ? [{ label: "Topic", value: safeDescription }] : []),
+      ],
+      closingHtml: `See you on the ${ordinalSuffix(dayNumber)}!`,
+    });
+
+    const attendeeText = [
+      "Meeting Invitation",
+      "",
+      `Hi ${attendeeFirstName},`,
+      "",
+      `You've been added as a participant in a meeting on ${dayOfWeek}, ${monthDay} at ${emailTime}. Details are below, and a calendar invite is attached.`,
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${emailDateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+      ...(safeDescription ? [`Topic: ${safeDescription}`] : []),
+      "",
+      `See you on the ${ordinalSuffix(dayNumber)}!`,
+    ].join("\n");
+
+    sendEmail({
+      to: attendee.email!,
+      subject: `Meeting on ${dayOfWeek}, ${monthDay} at ${emailTime}`,
+      text: attendeeText,
+      html: attendeeHtml,
+      icsContent,
+    }).catch((err) => console.error("Failed to send attendee invitation email:", err));
+  }
 
   return {
     eventId: event.data.id!,

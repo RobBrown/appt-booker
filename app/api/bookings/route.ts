@@ -153,6 +153,8 @@ export async function POST(request: NextRequest) {
               bookerEmail,
               bookerPhone,
               duration: String(duration),
+              description,
+              additionalAttendeesJson: JSON.stringify(additionalAttendees),
             },
           },
         },

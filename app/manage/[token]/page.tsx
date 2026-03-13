@@ -16,6 +16,8 @@ interface Booking {
   bookerName: string;
   bookerEmail: string;
   bookerPhone: string;
+  description: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
 }
 
 type View =
@@ -206,6 +208,7 @@ export default function ManagePage() {
           timezone,
           locationType: booking.locationType,
           locationDetails: booking.locationDetails,
+          additionalAttendees: booking.additionalAttendees,
         }),
       }).catch(() => {});
 
@@ -265,6 +268,8 @@ export default function ManagePage() {
           timezone,
           locationType: booking.locationType,
           locationDetails: booking.locationDetails,
+          description: booking.description,
+          additionalAttendees: booking.additionalAttendees,
           token,
         }),
       }).catch(() => {});

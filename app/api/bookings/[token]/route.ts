@@ -42,6 +42,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const duration = Math.round((end.getTime() - start.getTime()) / 60000);
     const props = event.extendedProperties?.private ?? {};
 
+    let additionalAttendees: Array<{ name: string; email?: string }> = [];
+    try {
+      if (props.additionalAttendeesJson) {
+        additionalAttendees = JSON.parse(props.additionalAttendeesJson);
+      }
+    } catch {
+      // malformed JSON — treat as empty
+    }
+
     return NextResponse.json({
       eventId: event.id,
       token,
@@ -52,6 +61,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       bookerName: props.bookerName ?? "",
       bookerEmail: props.bookerEmail ?? "",
       bookerPhone: props.bookerPhone ?? "",
+      description: props.description ?? "",
+      additionalAttendees,
     });
   } catch (error) {
     Sentry.captureException(error);

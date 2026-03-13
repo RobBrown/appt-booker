@@ -3,10 +3,13 @@ import * as Sentry from "@sentry/nextjs";
 import {
   sendEmail,
   escapeHtml,
-  formatDate,
-  formatSummaryText,
-  formatSummaryHtml,
+  formatDateParts,
+  formatTimeWithTz,
+  formatDateTimeLine,
+  formatLocationLine,
+  renderEmailHtml,
 } from "@/lib/gmail";
+import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -18,6 +21,7 @@ export async function POST(request: NextRequest) {
     const {
       bookerName,
       bookerEmail,
+      bookerPhone = "",
       startTime,
       duration,
       timezone,
@@ -32,54 +36,63 @@ export async function POST(request: NextRequest) {
     }
 
     const start = new Date(startTime);
-    const dateStr = formatDate(start, timezone);
-
-    const summaryOpts = {
-      bookerName,
-      additionalAttendees,
-      description,
-      startTime: start,
-      duration,
-      timezone,
-      locationType,
-      locationDetails,
-    };
-
-    // ---------------------------------------------------------------------------
-    // Plain text
-    // ---------------------------------------------------------------------------
-    const text = [
-      `New booking: ${bookerName}`,
-      ``,
-      formatSummaryText(summaryOpts),
-      ``,
-      `Booker email: ${bookerEmail}`,
-    ].join("\n");
-
-    // ---------------------------------------------------------------------------
-    // HTML
-    // ---------------------------------------------------------------------------
-    const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">New booking: ${escapeHtml(bookerName)}</h1>
-
-    <div style="background:#F9FAFB;border-radius:8px;padding:20px 24px;margin-bottom:24px">
-      ${formatSummaryHtml(summaryOpts)}
-    </div>
-
-    <p style="margin:16px 0 0;color:#6B7280;font-size:13px">Booker email: <a href="mailto:${escapeHtml(bookerEmail)}" style="color:#2563EB">${escapeHtml(bookerEmail)}</a></p>
-  </div>
-</body>
-</html>`;
-
+    const end = addMinutes(start, duration);
+    const hostName = process.env.HOST_NAME ?? "Your host";
     const hostEmail = process.env.GMAIL_USER!;
+    const hostTimezone = process.env.HOST_TIMEZONE ?? timezone;
+
+    const { dayOfWeek, monthDay, year } = formatDateParts(start, hostTimezone);
+    const time = formatTimeWithTz(start, hostTimezone);
+    const dateTimeLine = formatDateTimeLine(start, end, hostTimezone);
+    const locationLine = formatLocationLine(locationType, locationDetails);
+
+    // Attendees: host first, then booker, then additional
+    const attendeeLines = [
+      `${hostName}, ${hostEmail}`,
+      `${bookerName}, ${bookerEmail}`,
+      ...(additionalAttendees as Array<{ name: string; email?: string }>)
+        .map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+    ];
+
+    const subject = `New booking: ${bookerName} on ${dayOfWeek}, ${monthDay} at ${time}`;
+
+    const html = renderEmailHtml({
+      headerLabel: "New Booking",
+      bodyHtml: `${escapeHtml(bookerName)} booked time with you on ${escapeHtml(dayOfWeek)}, ${escapeHtml(monthDay)} at ${escapeHtml(time)}.`,
+      detailRows: [
+        {
+          label: "Attendees",
+          valueHtml: attendeeLines.map(escapeHtml).join("<br>"),
+        },
+        { label: "Date & Time", value: dateTimeLine },
+        { label: "Duration", value: `${duration} minutes` },
+        { label: "Location", value: locationLine },
+        ...(bookerPhone ? [{ label: "Backup Phone", value: bookerPhone }] : []),
+        ...(description ? [{ label: "Topic", value: description }] : []),
+      ],
+      closingHtml: "It's on the calendar.",
+    });
+
+    const text = [
+      "New Booking",
+      "",
+      `${bookerName} booked time with you on ${dayOfWeek}, ${monthDay} at ${time}.`,
+      "",
+      "Attendees:",
+      ...attendeeLines,
+      "",
+      `Date & Time: ${dateTimeLine}`,
+      `Duration: ${duration} minutes`,
+      `Location: ${locationLine}`,
+      ...(bookerPhone ? [`Backup Phone: ${bookerPhone}`] : []),
+      ...(description ? [`Topic: ${description}`] : []),
+      "",
+      `It's on the calendar.`,
+    ].join("\n");
 
     await sendEmail({
       to: hostEmail,
-      subject: `New booking: ${bookerName} — ${dateStr}`,
+      subject,
       text,
       html,
     });

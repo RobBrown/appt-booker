@@ -5,10 +5,15 @@ import { addHours, addMinutes } from "date-fns";
 import { getCalendarClient } from "@/lib/google-auth";
 import {
   sendEmail,
+  escapeHtml,
+  firstNameOf,
   meetingLabel,
-  formatDate,
-  formatTime,
-  formatTimeRange,
+  formatDateParts,
+  formatTimeWithTz,
+  formatDateTimeLine,
+  formatLocationLine,
+  formatLocationHtml,
+  renderEmailHtml,
 } from "@/lib/gmail";
 // ---------------------------------------------------------------------------
 // BOOKING_DATA block parser
@@ -39,62 +44,67 @@ async function send24hBookerEmail(opts: {
   end: Date;
   duration: number;
   timezone: string;
-  locationLine: string;
+  locationType: string;
+  locationDetails: string;
   manageUrl: string;
-  contactEmail: string;
   hostName: string;
+  hostEmail: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
+  topic?: string;
 }) {
-  const { bookerName, bookerEmail, start, end, duration, timezone, locationLine, manageUrl, contactEmail, hostName } = opts;
-  const dateStr = formatDate(start, timezone);
-  const timeRange = formatTimeRange(start, end, timezone);
-  const timeStr = formatTime(start, timezone);
+  const { bookerName, bookerEmail, start, end, duration, timezone, locationType, locationDetails, manageUrl, hostName, hostEmail, additionalAttendees, topic } = opts;
+  const firstName = firstNameOf(bookerName);
+  const { dayOfWeek, monthDay, year } = formatDateParts(start, timezone);
+  const time = formatTimeWithTz(start, timezone);
+  const dateTimeLine = formatDateTimeLine(start, end, timezone);
+  const locationHtml = formatLocationHtml(locationType, locationDetails);
+  const locationLine = formatLocationLine(locationType, locationDetails);
+
+  const attendeeLines = [
+    `${hostName}, ${hostEmail}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+  ];
+
+  const subject = `Reminder \u2014 tomorrow at ${time}`;
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 Tomorrow",
+    bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Just a heads up \u2014 your meeting is tomorrow at ${escapeHtml(time)}. Details below if you need them.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Date & Time", value: dateTimeLine },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", valueHtml: locationHtml },
+      ...(topic ? [{ label: "Topic", value: topic }] : []),
+    ],
+    button: { text: "Manage Booking", url: manageUrl },
+    afterBlockHtml: "If anything has changed, you can reschedule or cancel using the button above or reply to this email.",
+    closingHtml: "See you tomorrow!",
+  });
 
   const text = [
-    `Hi ${bookerName},`,
-    ``,
-    `Just a heads-up — you're meeting with ${hostName} tomorrow at ${timeStr}.`,
-    ``,
-    `Date: ${dateStr}`,
-    `Time: ${timeRange} (${timezone})`,
+    "Reminder \u2014 Tomorrow",
+    "",
+    `Hi ${firstName},`,
+    "",
+    `Just a heads up \u2014 your meeting is tomorrow at ${time}. Details below if you need them.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    `Date & Time: ${dayOfWeek}, ${monthDay}, ${year} \u00b7 ${time}`,
     `Duration: ${duration} minutes`,
-    `Meeting type: ${locationLine}`,
-    ``,
-    `If anything has changed, you can cancel or reschedule here:`,
-    manageUrl,
-    ``,
-    `Questions? ${contactEmail}`,
-    ``,
-    hostName,
+    `Location: ${locationLine}`,
+    ...(topic ? [`Topic: ${topic}`] : []),
+    "",
+    `Manage Booking: ${manageUrl}`,
+    "",
+    "If anything has changed, you can reschedule or cancel using the button above or reply to this email.",
+    "",
+    "See you tomorrow!",
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#111827">See you tomorrow, ${bookerName}.</h1>
-    <p style="margin:0 0 28px;color:#6B7280">Your meeting with ${hostName} is tomorrow at ${timeStr}.</p>
-    <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Date</td><td style="padding:8px 0;color:#111827">${dateStr}</td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Time</td><td style="padding:8px 0;color:#111827">${timeRange} <span style="color:#6B7280">(${timezone})</span></td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Duration</td><td style="padding:8px 0;color:#111827">${duration} minutes</td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Meeting type</td><td style="padding:8px 0;color:#111827">${locationLine}</td></tr>
-    </table>
-    <div style="margin:32px 0;border-top:1px solid #E5E7EB"></div>
-    <p style="margin:0 0 12px;color:#6B7280;font-size:14px">Need to change your plans?</p>
-    <a href="${manageUrl}" style="display:inline-block;padding:10px 20px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500">Cancel or reschedule</a>
-    <p style="margin:28px 0 0;color:#6B7280;font-size:13px">Questions? <a href="mailto:${contactEmail}" style="color:#2563EB">${contactEmail}</a></p>
-    <p style="margin:4px 0 0;color:#6B7280;font-size:13px">${hostName}</p>
-  </div>
-</body>
-</html>`;
-
-  await sendEmail({
-    to: bookerEmail,
-    subject: `Reminder: you're meeting with ${hostName} tomorrow at ${timeStr}`,
-    text,
-    html,
-  });
+  await sendEmail({ to: bookerEmail, subject, text, html });
 }
 
 async function send24hHostEmail(opts: {
@@ -103,45 +113,54 @@ async function send24hHostEmail(opts: {
   end: Date;
   duration: number;
   timezone: string;
-  locationLine: string;
+  locationType: string;
+  locationDetails: string;
   hostEmail: string;
+  hostName: string;
+  bookerEmail: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
+  topic?: string;
 }) {
-  const { bookerName, start, end, duration, timezone, locationLine, hostEmail } = opts;
-  const dateStr = formatDate(start, timezone);
-  const timeRange = formatTimeRange(start, end, timezone);
-  const timeStr = formatTime(start, timezone);
+  const { bookerName, start, end, duration, timezone, locationType, locationDetails, hostEmail, hostName, bookerEmail, additionalAttendees, topic } = opts;
+  const { dayOfWeek, monthDay } = formatDateParts(start, timezone);
+  const time = formatTimeWithTz(start, timezone);
+  const dateTimeLine = formatDateTimeLine(start, end, timezone);
+  const locationLine = formatLocationLine(locationType, locationDetails);
+
+  const attendeeLines = [
+    `${hostName}, ${hostEmail}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+  ];
+
+  const subject = `Tomorrow: ${bookerName} at ${time}`;
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 Tomorrow",
+    bodyHtml: `You have a meeting with ${escapeHtml(bookerName)} tomorrow at ${escapeHtml(time)}.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Date & Time", value: dateTimeLine },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", value: locationLine },
+      ...(topic ? [{ label: "Topic", value: topic }] : []),
+    ],
+  });
 
   const text = [
-    `Tomorrow: ${bookerName}`,
-    ``,
-    `Date: ${dateStr}`,
-    `Time: ${timeRange} (${timezone})`,
+    "Reminder \u2014 Tomorrow",
+    "",
+    `You have a meeting with ${bookerName} tomorrow at ${time}.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    `Date & Time: ${dayOfWeek}, ${monthDay} \u00b7 ${time}`,
     `Duration: ${duration} minutes`,
-    `Meeting type: ${locationLine}`,
+    `Location: ${locationLine}`,
+    ...(topic ? [`Topic: ${topic}`] : []),
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">Tomorrow: ${bookerName}</h1>
-    <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Date</td><td style="padding:8px 0;color:#111827">${dateStr}</td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Time</td><td style="padding:8px 0;color:#111827">${timeRange} <span style="color:#6B7280">(${timezone})</span></td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Duration</td><td style="padding:8px 0;color:#111827">${duration} minutes</td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Meeting type</td><td style="padding:8px 0;color:#111827">${locationLine}</td></tr>
-    </table>
-  </div>
-</body>
-</html>`;
-
-  await sendEmail({
-    to: hostEmail,
-    subject: `Tomorrow: ${bookerName} at ${timeStr}`,
-    text,
-    html,
-  });
+  await sendEmail({ to: hostEmail, subject, text, html });
 }
 
 async function send1hBookerEmail(opts: {
@@ -151,92 +170,220 @@ async function send1hBookerEmail(opts: {
   end: Date;
   duration: number;
   timezone: string;
-  locationLine: string;
+  locationType: string;
+  locationDetails: string;
   manageUrl: string;
   hostName: string;
+  hostEmail: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
+  topic?: string;
 }) {
-  const { bookerName, bookerEmail, start, end, timezone, locationLine, manageUrl, hostName } = opts;
-  const timeRange = formatTimeRange(start, end, timezone);
-  const timeStr = formatTime(start, timezone);
+  const { bookerName, bookerEmail, start, end, duration, timezone, locationType, locationDetails, manageUrl, hostName, hostEmail, additionalAttendees, topic } = opts;
+  const firstName = firstNameOf(bookerName);
+  const time = formatTimeWithTz(start, timezone);
+  const locationHtml = formatLocationHtml(locationType, locationDetails);
 
+  const attendeeLines = [
+    `${hostName}, ${hostEmail}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+  ];
+
+  const subject = "Reminder \u2014 1 hour";
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 1 Hour",
+    bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Your meeting starts in one hour \u2014 ${escapeHtml(time)}. Here are the details.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", valueHtml: locationHtml },
+      ...(topic ? [{ label: "Topic", value: topic }] : []),
+    ],
+    button: { text: "Manage Booking", url: manageUrl },
+    closingHtml: "See you shortly!",
+  });
+
+  const locationLine = formatLocationLine(locationType, locationDetails);
   const text = [
-    `Hi ${bookerName},`,
-    ``,
-    `Your meeting with ${hostName} starts in 1 hour at ${timeStr}.`,
-    ``,
-    `Time: ${timeRange} (${timezone})`,
-    `Meeting type: ${locationLine}`,
-    ``,
-    `Need to cancel? ${manageUrl}`,
-    ``,
-    hostName,
+    "Reminder \u2014 1 Hour",
+    "",
+    `Hi ${firstName},`,
+    "",
+    `Your meeting starts in one hour \u2014 ${time}. Here are the details.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    `Duration: ${duration} minutes`,
+    `Location: ${locationLine}`,
+    ...(topic ? [`Topic: ${topic}`] : []),
+    "",
+    `Manage Booking: ${manageUrl}`,
+    "",
+    "See you shortly!",
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#111827">Starting in 1 hour.</h1>
-    <p style="margin:0 0 28px;color:#6B7280">Your meeting with ${hostName} is at ${timeStr}.</p>
-    <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Time</td><td style="padding:8px 0;color:#111827">${timeRange} <span style="color:#6B7280">(${timezone})</span></td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Meeting type</td><td style="padding:8px 0;color:#111827">${locationLine}</td></tr>
-    </table>
-    <div style="margin:32px 0;border-top:1px solid #E5E7EB"></div>
-    <a href="${manageUrl}" style="display:inline-block;padding:10px 20px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500">Cancel or reschedule</a>
-    <p style="margin:28px 0 0;color:#6B7280;font-size:13px">${hostName}</p>
-  </div>
-</body>
-</html>`;
-
-  await sendEmail({
-    to: bookerEmail,
-    subject: `Your meeting with ${hostName} starts in 1 hour`,
-    text,
-    html,
-  });
+  await sendEmail({ to: bookerEmail, subject, text, html });
 }
 
 async function send1hHostEmail(opts: {
   bookerName: string;
   start: Date;
   end: Date;
+  duration: number;
   timezone: string;
-  locationLine: string;
+  locationType: string;
+  locationDetails: string;
   hostEmail: string;
+  topic?: string;
 }) {
-  const { bookerName, start, end, timezone, locationLine, hostEmail } = opts;
-  const timeRange = formatTimeRange(start, end, timezone);
-  const timeStr = formatTime(start, timezone);
+  const { bookerName, start, end, duration, timezone, locationType, locationDetails, hostEmail, topic } = opts;
+  const time = formatTimeWithTz(start, timezone);
+  const locationLine = formatLocationLine(locationType, locationDetails);
+  const label = meetingLabel(locationType);
+
+  const subject = `In 1 hour: ${bookerName} at ${time}`;
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 1 Hour",
+    bodyHtml: `${escapeHtml(bookerName)} in one hour \u2014 ${escapeHtml(time)}.`,
+    detailRows: [
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", value: locationLine },
+      ...(topic ? [{ label: "Topic", value: topic }] : []),
+    ],
+  });
 
   const text = [
-    `Starting in 1 hour: ${bookerName}`,
-    ``,
-    `Time: ${timeRange} (${timezone})`,
-    `Meeting type: ${locationLine}`,
+    "Reminder \u2014 1 Hour",
+    "",
+    `${bookerName} in one hour \u2014 ${time}.`,
+    "",
+    `Duration: ${duration} minutes`,
+    `Location: ${label}`,
+    ...(topic ? [`Topic: ${topic}`] : []),
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F9FA;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:600px;margin:40px auto;background:#FFFFFF;border-radius:12px;padding:40px;border:1px solid #E5E7EB">
-    <h1 style="margin:0 0 24px;font-size:20px;font-weight:600;color:#111827">Starting in 1 hour: ${bookerName}</h1>
-    <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Time</td><td style="padding:8px 0;color:#111827">${timeRange} <span style="color:#6B7280">(${timezone})</span></td></tr>
-      <tr><td style="padding:8px 12px 8px 0;color:#6B7280;white-space:nowrap;vertical-align:top">Meeting type</td><td style="padding:8px 0;color:#111827">${locationLine}</td></tr>
-    </table>
-  </div>
-</body>
-</html>`;
+  await sendEmail({ to: hostEmail, subject, text, html });
+}
 
-  await sendEmail({
-    to: hostEmail,
-    subject: `Starting in 1 hour: ${bookerName} at ${timeStr}`,
-    text,
-    html,
+async function send24hAttendeeEmail(opts: {
+  attendeeName: string;
+  attendeeEmail: string;
+  bookerName: string;
+  bookerEmail: string;
+  start: Date;
+  end: Date;
+  duration: number;
+  timezone: string;
+  locationType: string;
+  locationDetails: string;
+  hostName: string;
+  hostEmail: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
+  topic?: string;
+}) {
+  const { attendeeName, attendeeEmail, bookerName, bookerEmail, start, end, duration, timezone, locationType, locationDetails, hostName, hostEmail, additionalAttendees, topic } = opts;
+  const firstName = firstNameOf(attendeeName);
+  const time = formatTimeWithTz(start, timezone);
+  const dateTimeLine = formatDateTimeLine(start, end, timezone);
+  const locationHtml = formatLocationHtml(locationType, locationDetails);
+  const locationLine = formatLocationLine(locationType, locationDetails);
+  const attendeeLines = [
+    `${hostName}, ${hostEmail}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+  ];
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 Tomorrow",
+    bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Just a heads up \u2014 your meeting is tomorrow at ${escapeHtml(time)}. Details below if you need them.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Date & Time", value: dateTimeLine },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", valueHtml: locationHtml },
+      ...(topic ? [{ label: "Topic", value: topic }] : []),
+    ],
+    afterBlockHtml: "If anything has changed, reply to this email.",
+    closingHtml: "See you tomorrow!",
   });
+
+  const text = [
+    "Reminder \u2014 Tomorrow",
+    "",
+    `Hi ${firstName},`,
+    "",
+    `Just a heads up \u2014 your meeting is tomorrow at ${time}. Details below if you need them.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    `Date & Time: ${dateTimeLine}`,
+    `Duration: ${duration} minutes`,
+    `Location: ${locationLine}`,
+    ...(topic ? [`Topic: ${topic}`] : []),
+    "",
+    "If anything has changed, reply to this email.",
+    "",
+    "See you tomorrow!",
+  ].join("\n");
+
+  await sendEmail({ to: attendeeEmail, subject: `Reminder \u2014 tomorrow at ${time}`, text, html });
+}
+
+async function send1hAttendeeEmail(opts: {
+  attendeeName: string;
+  attendeeEmail: string;
+  bookerName: string;
+  bookerEmail: string;
+  start: Date;
+  end: Date;
+  duration: number;
+  timezone: string;
+  locationType: string;
+  locationDetails: string;
+  hostName: string;
+  hostEmail: string;
+  additionalAttendees: Array<{ name: string; email?: string }>;
+}) {
+  const { attendeeName, attendeeEmail, bookerName, bookerEmail, start, end, duration, timezone, locationType, locationDetails, hostName, hostEmail, additionalAttendees } = opts;
+  const firstName = firstNameOf(attendeeName);
+  const time = formatTimeWithTz(start, timezone);
+  const locationHtml = formatLocationHtml(locationType, locationDetails);
+  const locationLine = formatLocationLine(locationType, locationDetails);
+  const attendeeLines = [
+    `${hostName}, ${hostEmail}`,
+    `${bookerName}, ${bookerEmail}`,
+    ...additionalAttendees.map((a) => a.email ? `${a.name}, ${a.email}` : a.name),
+  ];
+
+  const html = renderEmailHtml({
+    headerLabel: "Reminder \u2014 1 Hour",
+    bodyHtml: `Hi ${escapeHtml(firstName)},<br><br>Your meeting starts in one hour \u2014 ${escapeHtml(time)}. Here are the details.`,
+    detailRows: [
+      { label: "Attendees", valueHtml: attendeeLines.map(escapeHtml).join("<br>") },
+      { label: "Duration", value: `${duration} minutes` },
+      { label: "Location", valueHtml: locationHtml },
+    ],
+    closingHtml: "See you shortly!",
+  });
+
+  const text = [
+    "Reminder \u2014 1 Hour",
+    "",
+    `Hi ${firstName},`,
+    "",
+    `Your meeting starts in one hour \u2014 ${time}. Here are the details.`,
+    "",
+    "Attendees:",
+    ...attendeeLines,
+    `Duration: ${duration} minutes`,
+    `Location: ${locationLine}`,
+    "",
+    "See you shortly!",
+  ].join("\n");
+
+  await sendEmail({ to: attendeeEmail, subject: "Reminder \u2014 1 hour", text, html });
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +407,7 @@ export async function POST(request: NextRequest) {
   const hostName = process.env.HOST_NAME ?? "Your host";
   const hostDomain = process.env.HOST_DOMAIN ?? "";
   const hostEmail = process.env.GMAIL_USER!;
-  const contactEmail = process.env.CONTACT_EMAIL ?? hostEmail;
+  const hostTimezone = process.env.HOST_TIMEZONE ?? "America/Toronto";
 
   const results: Array<{ eventId: string; type: string; sent: string[]; skipped?: string }> = [];
 
@@ -295,7 +442,25 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const { name: bookerName, email: bookerEmail, timezone, locationType, locationDetails = "", duration: durationStr } = bookingData;
+      // Prefer extendedProperties (written by current booking flow) over BOOKING_DATA
+      const props = event.extendedProperties?.private ?? {};
+      const bookerName = props.bookerName || bookingData?.name || "";
+      const bookerEmail = props.bookerEmail || bookingData?.email || "";
+      const timezone = props.timezone || bookingData?.timezone || "";
+      const locationType = props.locationType || bookingData?.locationType || "";
+      const locationDetails = props.locationDetails || bookingData?.locationDetails || "";
+      const durationStr = props.duration || bookingData?.duration || "";
+      const topic = props.description || bookingData?.topic || "";
+
+      let additionalAttendees: Array<{ name: string; email?: string }> = [];
+      try {
+        if (props.additionalAttendeesJson) {
+          additionalAttendees = JSON.parse(props.additionalAttendeesJson);
+        }
+      } catch {
+        // malformed JSON — treat as empty
+      }
+
       if (!bookerName || !bookerEmail || !timezone || !locationType || !durationStr) {
         results.push({ eventId, type: "skip", sent: [], skipped: "missing fields in BOOKING_DATA" });
         continue;
@@ -317,8 +482,6 @@ export async function POST(request: NextRequest) {
       if (!is24h && !is1h) continue;
 
       const reminderType = is24h ? "24h" : "1h";
-      const label = meetingLabel(locationType);
-      const locationLine = locationDetails ? `${label} — ${locationDetails}` : label;
       const manageUrl = `${hostDomain}/manage/${token}`;
       const sent: string[] = [];
 
@@ -329,40 +492,78 @@ export async function POST(request: NextRequest) {
       });
 
       if (is24h) {
-        // Booker email
         try {
-          await send24hBookerEmail({ bookerName, bookerEmail, start, end, duration, timezone, locationLine, manageUrl, contactEmail, hostName });
+          await send24hBookerEmail({
+            bookerName, bookerEmail, start, end, duration, timezone,
+            locationType, locationDetails, manageUrl, hostName, hostEmail,
+            additionalAttendees, topic: topic || undefined,
+          });
           sent.push("booker-email");
         } catch (err) {
           Sentry.captureException(err, { extra: { eventId, reminderType, target: "booker-email" } });
         }
 
-        // Host email
         try {
-          await send24hHostEmail({ bookerName, start, end, duration, timezone, locationLine, hostEmail });
+          await send24hHostEmail({
+            bookerName, start, end, duration, timezone: hostTimezone,
+            locationType, locationDetails, hostEmail, hostName, bookerEmail,
+            additionalAttendees, topic: topic || undefined,
+          });
           sent.push("host-email");
         } catch (err) {
           Sentry.captureException(err, { extra: { eventId, reminderType, target: "host-email" } });
+        }
+
+        for (const attendee of additionalAttendees.filter((a) => a.email)) {
+          try {
+            await send24hAttendeeEmail({
+              attendeeName: attendee.name, attendeeEmail: attendee.email!,
+              bookerName, start, end, duration, timezone,
+              locationType, locationDetails, hostName, hostEmail, bookerEmail,
+              additionalAttendees, topic: topic || undefined,
+            });
+            sent.push(`attendee-email:${attendee.email}`);
+          } catch (err) {
+            Sentry.captureException(err, { extra: { eventId, reminderType, target: "attendee-email", attendeeEmail: attendee.email } });
+          }
         }
 
       } else {
-        // 1h reminder
-        // Booker email
         try {
-          await send1hBookerEmail({ bookerName, bookerEmail, start, end, duration, timezone, locationLine, manageUrl, hostName });
+          await send1hBookerEmail({
+            bookerName, bookerEmail, start, end, duration, timezone,
+            locationType, locationDetails, manageUrl, hostName, hostEmail,
+            additionalAttendees, topic: topic || undefined,
+          });
           sent.push("booker-email");
         } catch (err) {
           Sentry.captureException(err, { extra: { eventId, reminderType, target: "booker-email" } });
         }
 
-        // Host email
         try {
-          await send1hHostEmail({ bookerName, start, end, timezone, locationLine, hostEmail });
+          await send1hHostEmail({
+            bookerName, start, end, duration, timezone: hostTimezone,
+            locationType, locationDetails, hostEmail,
+            topic: topic || undefined,
+          });
           sent.push("host-email");
         } catch (err) {
           Sentry.captureException(err, { extra: { eventId, reminderType, target: "host-email" } });
         }
 
+        for (const attendee of additionalAttendees.filter((a) => a.email)) {
+          try {
+            await send1hAttendeeEmail({
+              attendeeName: attendee.name, attendeeEmail: attendee.email!,
+              bookerName, start, end, duration, timezone,
+              locationType, locationDetails, hostName, hostEmail, bookerEmail,
+              additionalAttendees,
+            });
+            sent.push(`attendee-email:${attendee.email}`);
+          } catch (err) {
+            Sentry.captureException(err, { extra: { eventId, reminderType, target: "attendee-email", attendeeEmail: attendee.email } });
+          }
+        }
       }
 
       console.log(`[reminders] ${reminderType} reminder for event ${eventId}: sent [${sent.join(", ")}]`);
