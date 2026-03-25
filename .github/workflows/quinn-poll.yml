@@ -1,0 +1,32 @@
+name: Quinn inbox poll
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # allows manual trigger from GitHub UI
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    environment: appt-booker
+    steps:
+      - name: Wake up server
+        run: |
+          echo "Pinging server to wake from sleep..."
+          curl -s -o /dev/null --max-time 60 "${{ vars.APP_URL }}" || true
+          echo "Done."
+
+      - name: Trigger Quinn poll
+        run: |
+          TARGET="${{ vars.APP_URL }}/api/cron/quinn-poll"
+          echo "Calling: $TARGET"
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$TARGET" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 60) || { echo "curl failed with exit code $?"; exit 1; }
+          echo "HTTP status: $response"
+          if [ "$response" != "200" ]; then
+            echo "Unexpected status code: $response"
+            exit 1
+          fi
+          echo "Quinn poll triggered successfully."
