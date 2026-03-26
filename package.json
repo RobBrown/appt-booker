@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "doppler run -- next dev",
+    "build": "doppler run -- next build",
+    "start": "doppler run -- next start",
     "test": "vitest run"
   },
   "dependencies": {
@@ -15,7 +15,7 @@
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.213.0",
     "@opentelemetry/sdk-logs": "^0.213.0",
-    "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/sdk-node": "^0.214.0",
     "@sentry/nextjs": "^10.42.0",
     "@tailwindcss/forms": "^0.5.11",
     "@upstash/ratelimit": "^2.0.8",
@@ -35,6 +35,10 @@
     "react-dom": "19.2.3",
     "tailwind-merge": "^3.5.0",
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "picomatch@<2.3.2": "2.3.2",
+    "picomatch@>=4.0.0 <4.0.4": "4.0.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

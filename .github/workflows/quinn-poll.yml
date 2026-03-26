@@ -17,6 +17,7 @@ jobs:
           echo "Done."
 
       - name: Trigger Quinn poll
+        id: poll
         run: |
           TARGET="${{ vars.APP_URL }}/api/cron/quinn-poll"
           echo "Calling: $TARGET"
@@ -30,3 +31,13 @@ jobs:
             exit 1
           fi
           echo "Quinn poll triggered successfully."
+
+      - name: Report failure to Sentry
+        if: failure()
+        run: |
+          curl -sS "${{ vars.APP_URL }}/api/sentry/cron-failure" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"workflow":"quinn-poll","run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            --max-time 10 || echo "Sentry report failed (non-fatal)"

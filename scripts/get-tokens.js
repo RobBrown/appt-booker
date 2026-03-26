@@ -13,8 +13,8 @@
  *   GOOGLE_CLIENT_ID=your_id GOOGLE_CLIENT_SECRET=your_secret node scripts/get-tokens.js
  *
  * This script starts a temporary local server on port 3001 to capture the
- * OAuth2 callback. After running, copy GOOGLE_REFRESH_TOKEN into .env.local
- * and into Render.com environment variables.
+ * OAuth2 callback. After running, add GOOGLE_REFRESH_TOKEN to Doppler
+ * (it will sync to Render.com automatically).
  *
  * SECURITY: Never commit credentials or tokens to the repository.
  */
@@ -82,10 +82,10 @@ const server = createServer(async (req, res) => {
     console.log("\n========================================");
     console.log("Tokens obtained successfully!");
     console.log("========================================\n");
-    console.log("Add the following to your .env.local:\n");
+    console.log("Add the following to Doppler:\n");
     console.log(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
     console.log(
-      "\nAlso set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local and Render.com.\n"
+      "\nAlso set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Doppler.\n"
     );
     console.log("IMPORTANT: Keep these values secret. Never commit them to git.\n");
 

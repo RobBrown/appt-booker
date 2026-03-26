@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import Image from "next/image";
@@ -90,22 +90,34 @@ export function BookingPage({
   const [quinnOpen, setQuinnOpen] = useState(false);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [duration, setDuration] = useState<number | null>(() => {
-    const d = searchParams.get("duration");
+    const d = searchParams.get("duration") ?? searchParams.get("time");
     return d ? Number(d) : null;
   });
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(
+    () => searchParams.get("date") ?? null
+  );
+  const [selectedTime, setSelectedTime] = useState<string | null>(
+    () => searchParams.get("slot") ?? null
+  );
   const [locationType, setLocationType] = useState<string>(() => {
     return searchParams.get("type") || defaultLocation || "zoom";
   });
   const [locationDetails, setLocationDetails] = useState<string>(
-    ""
+    () => searchParams.get("location") ?? ""
   );
   const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [description, setDescription] = useState("");
-  const [bookerName, setBookerName] = useState("");
-  const [bookerEmail, setBookerEmail] = useState("");
-  const [bookerPhone, setBookerPhone] = useState("");
+  const [description, setDescription] = useState(
+    () => searchParams.get("agenda") ?? ""
+  );
+  const [bookerName, setBookerName] = useState(
+    () => searchParams.get("name") ?? ""
+  );
+  const [bookerEmail, setBookerEmail] = useState(
+    () => searchParams.get("email") ?? ""
+  );
+  const [bookerPhone, setBookerPhone] = useState(
+    () => searchParams.get("phone") ?? ""
+  );
   const [isConfirming, setIsConfirming] = useState(false);
   const [nameError, setNameError] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -113,10 +125,16 @@ export function BookingPage({
   const [emailFailed, setEmailFailed] = useState(false);
   const [confirmedStartTime, setConfirmedStartTime] = useState<string | null>(null);
 
-  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
-  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
+  const [calendarYear, setCalendarYear] = useState(() => {
+    const d = searchParams.get("date");
+    return d ? new Date(d + "T00:00").getFullYear() : today.getFullYear();
+  });
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const d = searchParams.get("date");
+    return d ? new Date(d + "T00:00").getMonth() : today.getMonth();
+  });
   const [timezone, setTimezone] = useState(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone
+    () => searchParams.get("tz") ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   );
 
   const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
@@ -378,6 +396,31 @@ export function BookingPage({
     !!bookerName.trim() &&
     !!bookerEmail.trim() &&
     (!REQUIRES_LINK.has(locationType) || !!locationDetails.trim());
+
+  const isInviteMode = searchParams.get("invite") === "1";
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const inviteCopiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleCopyInviteLink = () => {
+    const params = new URLSearchParams();
+    if (duration) params.set("time", String(duration));
+    if (timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone) params.set("tz", timezone);
+    if (selectedDate) params.set("date", selectedDate);
+    if (selectedTime) params.set("slot", selectedTime);
+    if (locationType && locationType !== (defaultLocation || "zoom")) params.set("type", locationType);
+    if (locationDetails.trim()) params.set("location", locationDetails.trim());
+    if (bookerName.trim()) params.set("name", bookerName.trim());
+    if (bookerEmail.trim()) params.set("email", bookerEmail.trim());
+    if (bookerPhone.trim()) params.set("phone", bookerPhone.trim());
+    if (description.trim()) params.set("agenda", description.trim());
+
+    const qs = params.toString();
+    const url = `${window.location.origin}/${qs ? `?${qs}` : ""}`;
+    navigator.clipboard.writeText(url);
+    setInviteCopied(true);
+    clearTimeout(inviteCopiedTimer.current);
+    inviteCopiedTimer.current = setTimeout(() => setInviteCopied(false), 2000);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
@@ -795,6 +838,14 @@ export function BookingPage({
                   ? "Add a meeting link to continue."
                   : "Enter your name and email to confirm."}
               </p>
+            )}
+            {isInviteMode && (
+              <button
+                onClick={handleCopyInviteLink}
+                className="mt-3 w-full py-3 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 font-medium text-sm transition-colors"
+              >
+                {inviteCopied ? "Copied!" : "Copy invite link"}
+              </button>
             )}
           </div>
 

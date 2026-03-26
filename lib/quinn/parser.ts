@@ -20,7 +20,7 @@ function getAnthropicClient(): Anthropic {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "[quinn/parser] ANTHROPIC_API_KEY is not set. Add it to .env.local."
+        "[quinn/parser] ANTHROPIC_API_KEY is not set."
       );
     }
     _client = new Anthropic({ apiKey });

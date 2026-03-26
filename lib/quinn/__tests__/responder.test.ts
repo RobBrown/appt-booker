@@ -125,17 +125,11 @@ describe("composeReply — booked", () => {
     expect(reply).toContain("Who is Quinn?");
   });
 
-  it("includes assumptions when present", () => {
+  it("does not include assumptions in reply", () => {
     const intent = makeBookIntent({ assumptions: ["Assumed 30-minute duration"] });
     const { text: reply } = composeReply(intent, bookedResult, { timezone: TIMEZONE });
-    expect(reply).toContain("Assumed 30-minute duration");
-  });
-
-  it("does not include assumption note when assumptions array is empty", () => {
-    const intent = makeBookIntent({ assumptions: [] });
-    const { text: reply } = composeReply(intent, bookedResult, { timezone: TIMEZONE });
-    // No assumptions prefix or bullet text
     expect(reply).not.toContain("Assumed");
+    expect(reply).not.toContain("couple of notes");
   });
 
   it("includes substituted time note when slot was changed", () => {
@@ -192,10 +186,10 @@ describe("composeReply — availability_listed", () => {
     expect(reply.trimEnd()).toMatch(/\nQuinn$/);
   });
 
-  it("includes assumptions when present", () => {
+  it("does not include assumptions in reply", () => {
     const intent = makeCheckAvailabilityIntent({ assumptions: ["Assumed 30-minute duration"] });
     const { text: reply } = composeReply(intent, availResult, { timezone: TIMEZONE });
-    expect(reply).toContain("Assumed 30-minute duration");
+    expect(reply).not.toContain("Assumed");
   });
 
   it("handles empty slots gracefully", () => {

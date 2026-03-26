@@ -130,7 +130,7 @@ Several layers of hardening are built in:
 
 ### Environment variables
 
-Copy `.env.example` to `.env.local` and fill in every value:
+Environment variables are managed via [Doppler](https://doppler.com). See `.env.example` for the full list of required variables:
 
 ```
 # Host identity
@@ -189,14 +189,11 @@ DURATION_LABEL_120=
 1. Connect your GitHub repository to Render as a Web Service
 2. Build command: `npm install && npm run build`
 3. Start command: `npm start`
-4. Add all environment variables from `.env.example` in the Render dashboard
+4. Environment variables are synced from Doppler to Render automatically
 
 ### Cron setup
 
-The reminder job uses a GitHub Actions scheduled workflow (`.github/workflows/reminders.yml`). Add two values to your repository's Actions configuration:
-
-- **Secret:** `CRON_SECRET`, the same value as in your environment variables
-- **Variable:** `APP_URL`, your production URL
+The reminder job uses a GitHub Actions scheduled workflow (`.github/workflows/reminders.yml`). `CRON_SECRET` and `APP_URL` are synced from Doppler to the GitHub Actions `appt-booker` environment automatically.
 
 The workflow runs at the top of every hour and calls `POST /api/cron/reminders` with the bearer token. To test it manually, use the **Run workflow** button in the Actions tab, or:
 
@@ -298,6 +295,46 @@ The agent will use the correct tools automatically.
 ### Authentication
 
 Authentication uses **Clerk as the OAuth 2.1 authorization server** with Google and Microsoft social login. The MCP endpoint returns `401 Unauthorized` for any request without a valid token. Clerk tokens are validated on every request.
+
+---
+
+## Invite links
+
+You can pre-fill any booking field via URL parameters to create invite links for specific people or contexts. All pre-filled fields remain editable by the recipient.
+
+### Parameters
+
+| Parameter | Field | Example value |
+|---|---|---|
+| `time` | Duration in minutes | `15`, `30`, `60`, `120` |
+| `tz` | Timezone (IANA) | `America/New_York` |
+| `date` | Date | `2026-04-01` |
+| `slot` | Time of day (24h) | `14:00` |
+| `type` | Location type | `zoom`, `google-meet`, `phone`, `in-person`, `webex`, `jitsi` |
+| `location` | Location details (link or address) | `https://zoom.us/j/123456` |
+| `name` | Attendee name | `Jane Smith` |
+| `email` | Email address | `jane@example.com` |
+| `phone` | Phone number | `555-123-4567` |
+| `agenda` | Meeting agenda | `Discuss project timeline` |
+
+`duration` also works as an alias for `time`.
+
+### Examples
+
+A 30-minute Zoom call with a specific person:
+```
+https://book.robisit.com/?time=30&type=zoom&name=Jane+Smith&email=jane@example.com
+```
+
+A 60-minute in-person meeting with agenda pre-filled:
+```
+https://book.robisit.com/?time=60&type=in-person&location=123+Main+St&agenda=Quarterly+review
+```
+
+A link for someone in a different timezone:
+```
+https://book.robisit.com/?time=30&tz=Europe/London&name=Alex+Park&email=alex@example.com
+```
 
 ---
 

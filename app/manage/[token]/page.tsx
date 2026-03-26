@@ -197,7 +197,7 @@ export default function ManagePage() {
         return;
       }
 
-      // Fire-and-forget cancel emails + SMS
+      // Fire-and-forget cancel emails
       fetch("/api/email/cancellation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -265,7 +265,7 @@ export default function ManagePage() {
       });
       setNewStartTime(confirmedStart);
 
-      // Fire-and-forget reschedule emails + SMS
+      // Fire-and-forget reschedule emails
       fetch("/api/email/reschedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

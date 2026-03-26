@@ -63,16 +63,13 @@ function formatSlot12h(hhMM: string): string {
 // Only rendered when there are assumptions.
 // ---------------------------------------------------------------------------
 
-function assumptionsBlock(assumptions: string[]): string {
-  if (!assumptions || assumptions.length === 0) return "";
-  return "\n\nA couple of notes:\n" + assumptions.map((a) => `- ${a}`).join("\n");
+// Assumptions are no longer included in email replies — logged server-side only.
+function assumptionsBlock(): string {
+  return "";
 }
 
-function assumptionsBlockHtml(assumptions: string[]): string {
-  if (!assumptions || assumptions.length === 0) return "";
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const items = assumptions.map((a) => `<li>${esc(a)}</li>`).join("");
-  return `<br><br>A couple of notes:<ul style="margin:4px 0 0 0;padding-left:20px">${items}</ul>`;
+function assumptionsBlockHtml(): string {
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +177,7 @@ function composeBookedReply(
     "Please don't forget to accept the calendar invitation.",
   );
 
-  const assumptions = assumptionsBlock(intent.assumptions);
+  const assumptions = assumptionsBlock();
   if (assumptions) textParts.push(assumptions);
 
   textParts.push(
@@ -232,7 +229,7 @@ function composeBookedReply(
     `<br><br>Please don&#39;t forget to accept the calendar invitation.`,
   );
 
-  const assumptionsHtml = assumptionsBlockHtml(intent.assumptions);
+  const assumptionsHtml = assumptionsBlockHtml();
   if (assumptionsHtml) htmlParts.push(assumptionsHtml);
 
   htmlParts.push(
@@ -253,7 +250,7 @@ function composeAvailabilityReply(
   intent: Intent,
   result: Extract<ActionResult, { type: "availability_listed" }>
 ): ComposeResult {
-  const assumptions = assumptionsBlock(intent.assumptions);
+  const assumptions = assumptionsBlock();
 
   if (result.slots.length === 0) {
     return {
@@ -285,7 +282,7 @@ function composeRescheduledReply(
   const hostUrl = getHostUrl();
   const formattedTime = formatTime12h(result.newStartTime, timezone);
   const managementLink = `${hostUrl}/manage/${result.token}`;
-  const assumptions = assumptionsBlock(intent.assumptions);
+  const assumptions = assumptionsBlock();
 
   return {
     text:
