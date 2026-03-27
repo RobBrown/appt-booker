@@ -11,7 +11,10 @@ import { checkTrust, getHeader, extractEmail } from "@/lib/quinn/trust";
 import { processMessage } from "@/lib/quinn/processor";
 import { composeReply } from "@/lib/quinn/responder";
 import { sendReplyToThread } from "@/lib/quinn/mailer";
+import { logger, withSpan } from "@hal866245/observability-core";
 import { getPostHogClient } from "@/lib/posthog-server";
+
+const log = logger.child({ service: "quinn/poll" });
 
 // ---------------------------------------------------------------------------
 // POST /api/cron/quinn-poll
@@ -59,9 +62,9 @@ export async function POST(request: NextRequest) {
   // -------------------------------------------------------------------------
 
   try {
-    const messages = await pollInbox();
+    const messages = await withSpan("quinn.poll-cycle", () => pollInbox());
     await resetConsecutiveFailures();
-    console.log(`[quinn/poll] Processed ${messages.length} message(s)`);
+    log.info("Poll complete", { message_count: messages.length });
 
     let trusted = 0;
     let discarded = 0;
@@ -71,7 +74,7 @@ export async function POST(request: NextRequest) {
       const trustResult = checkTrust(msg);
       if (!trustResult.trusted) {
         // TRUST-04: silently discard — no reply, no error
-        console.log(`[quinn/poll] Discarded ${msg.id} reason=${trustResult.reason}`);
+        log.info("Discarded untrusted message", { messageId: msg.id, reason: trustResult.reason });
         logQuinnEvent("quinn:trust_check", {
           message_id: msg.id,
           result: trustResult.reason,
@@ -90,7 +93,7 @@ export async function POST(request: NextRequest) {
         result: "trusted",
       });
 
-      console.log(`[quinn/poll] Trusted message ${msg.id} thread=${msg.threadId}`);
+      log.info("Trusted message", { messageId: msg.id, threadId: msg.threadId });
       trusted++;
 
       // D-28: individual message errors do not kill the batch
@@ -100,9 +103,7 @@ export async function POST(request: NextRequest) {
         // Internal errors: log to Sentry, don't reply to the sender
         if (result.actionResult.type === "error") {
           Sentry.captureMessage(`Quinn error for message ${msg.id}: ${result.actionResult.userMessage}`, "warning");
-          console.log(
-            `[quinn/poll] Suppressed error reply for ${msg.id}: ${result.actionResult.userMessage}`
-          );
+          log.warn("Suppressed error reply", { messageId: msg.id, error: result.actionResult.userMessage });
           continue;
         }
 
@@ -164,22 +165,14 @@ export async function POST(request: NextRequest) {
           duration_ms: result.durationMs,
         });
 
-        console.log(
-          `[quinn/poll] Replied to message ${msg.id} intent=${result.intent.intent} success=${result.success}`
-        );
+        log.info("Replied to message", { messageId: msg.id, intent: result.intent.intent, success: result.success });
       } catch (msgErr) {
         Sentry.captureException(msgErr);
-        console.log(
-          `[quinn/poll] Error processing message ${msg.id}: ${
-            msgErr instanceof Error ? msgErr.message : String(msgErr)
-          }`
-        );
+        log.error("Error processing message", { messageId: msg.id, error: msgErr instanceof Error ? msgErr.message : String(msgErr) });
       }
     }
 
-    console.log(
-      `[quinn/poll] Done: ${trusted} trusted, ${discarded} discarded, ${replied} replied`
-    );
+    log.info("Quinn poll cycle complete", { trusted, discarded, replied });
     return NextResponse.json({
       ok: true,
       processed: messages.length,
@@ -188,7 +181,7 @@ export async function POST(request: NextRequest) {
       replied,
     });
   } catch (error) {
-    console.error(`[quinn/poll] POLL ERROR:`, error);
+    log.error("Poll error", { error: error instanceof Error ? error.message : String(error) });
     Sentry.captureException(error);
 
     // Track consecutive failures (D-06)

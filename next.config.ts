@@ -53,6 +53,17 @@ const nextConfig: NextConfig = {
     "gaxios",
     "google-auth-library",
     "node-fetch",
+    "@hal866245/observability-core",
+    "@opentelemetry/api",
+    "@opentelemetry/sdk-node",
+    "@opentelemetry/sdk-logs",
+    "@opentelemetry/sdk-metrics",
+    "@opentelemetry/exporter-trace-otlp-http",
+    "@opentelemetry/exporter-logs-otlp-http",
+    "@opentelemetry/exporter-metrics-otlp-http",
+    "@opentelemetry/resources",
+    "@opentelemetry/semantic-conventions",
+    "@opentelemetry/api-logs",
   ],
   async rewrites() {
     return [

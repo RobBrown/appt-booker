@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
 import {
   sendEmail,
   buildIcs,
@@ -15,6 +16,8 @@ import {
 } from "@/lib/gmail";
 import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const log = logger.child({ service: "email", emailType: "reschedule" });
 
 export async function POST(request: NextRequest) {
   const limited = await checkRateLimit(limiters.email, request);
@@ -117,12 +120,13 @@ export async function POST(request: NextRequest) {
       "The calendar has been updated.",
     ].join("\n");
 
-    await sendEmail({
+    log.info("Sending reschedule emails");
+    await withSpan("gmail.send", () => sendEmail({
       to: hostEmail,
       subject: hostSubject,
       text: hostText,
       html: hostHtml,
-    });
+    }), { emailType: "reschedule", target: "host" });
 
     // -------------------------------------------------------------------------
     // Email 04: Reschedule — Booker
@@ -189,13 +193,13 @@ export async function POST(request: NextRequest) {
       `See you on the ${ordinalSuffix(dayNumber)}!`,
     ].join("\n");
 
-    await sendEmail({
+    await withSpan("gmail.send", () => sendEmail({
       to: bookerEmail,
       subject: bookerSubject,
       text: bookerText,
       html: bookerHtml,
       icsContent,
-    });
+    }), { emailType: "reschedule", target: "booker" });
 
     // Additional attendee reschedule emails
     const extraAttendees = (additionalAttendees as Array<{ name: string; email?: string }>)
@@ -250,6 +254,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    log.error("Failed to send reschedule emails", { error: String(error) });
     Sentry.captureException(error);
     return NextResponse.json({ error: "Failed to send reschedule emails." }, { status: 500 });
   }

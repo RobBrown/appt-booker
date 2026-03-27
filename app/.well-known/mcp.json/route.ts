@@ -8,7 +8,12 @@
  * This route MUST be publicly accessible — no auth required.
  */
 
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "mcp-discovery" });
+
 export async function GET(req: Request) {
+  log.info("MCP discovery requested");
   const url = new URL(req.url);
 
   // In production HOST_DOMAIN is set; in dev we derive from the request.

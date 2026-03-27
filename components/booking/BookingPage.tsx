@@ -142,6 +142,8 @@ export function BookingPage({
   const [datesLoading, setDatesLoading] = useState(false);
   const [slots, setSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const inviteCopiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMonthDates = useCallback(
     async (year: number, month: number, dur: number, tz: string) => {
@@ -356,13 +358,18 @@ export function BookingPage({
         body: emailBody,
       })
         .then((res) => { if (!res.ok) setEmailFailed(true); })
-        .catch(() => setEmailFailed(true));
+        .catch((err) => {
+          console.error(JSON.stringify({ service: "booking-ui", endpoint: "/api/email/confirmation", error: String(err) }));
+          setEmailFailed(true);
+        });
 
       fetch("/api/email/notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: emailBody,
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(JSON.stringify({ service: "booking-ui", endpoint: "/api/email/notification", error: String(err) }));
+      });
     } catch {
       setBookingError("We couldn't confirm your booking. Please try again.");
       setIsConfirming(false);
@@ -398,8 +405,6 @@ export function BookingPage({
     (!REQUIRES_LINK.has(locationType) || !!locationDetails.trim());
 
   const isInviteMode = searchParams.get("invite") === "1";
-  const [inviteCopied, setInviteCopied] = useState(false);
-  const inviteCopiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleCopyInviteLink = () => {
     const params = new URLSearchParams();

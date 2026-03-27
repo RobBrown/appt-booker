@@ -9,6 +9,9 @@
  */
 
 import { addMinutes } from "date-fns";
+import { logger, withSpan } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "bookings" });
 import { getCalendarClient } from "@/lib/google-auth";
 import { getBusyPeriods, getHostTimezone } from "@/lib/availability";
 import { extractZoomMeetingId, updateZoomMeeting, deleteZoomMeeting } from "@/lib/zoom";
@@ -247,32 +250,34 @@ export async function createBooking(
 
   let event;
   try {
-    event = await withRetry(() =>
-      calendar.events.insert({
-        calendarId,
-        sendUpdates: "none", // confirmation emails handled separately
-        requestBody: {
-          summary: eventTitle,
-          description: eventDescription,
-          location: locationDetails || undefined,
-          start: { dateTime: start.toISOString(), timeZone: timezone },
-          end: { dateTime: end.toISOString(), timeZone: timezone },
-          attendees: guests,
-          extendedProperties: {
-            private: {
-              token,
-              locationType,
-              locationDetails,
-              bookerName,
-              bookerEmail,
-              bookerPhone,
-              duration: String(duration),
-              description: safeDescription,
-              additionalAttendeesJson: JSON.stringify(additionalAttendees),
+    event = await withSpan("calendar.events.insert", async () =>
+      withRetry(() =>
+        calendar.events.insert({
+          calendarId,
+          sendUpdates: "none", // confirmation emails handled separately
+          requestBody: {
+            summary: eventTitle,
+            description: eventDescription,
+            location: locationDetails || undefined,
+            start: { dateTime: start.toISOString(), timeZone: timezone },
+            end: { dateTime: end.toISOString(), timeZone: timezone },
+            attendees: guests,
+            extendedProperties: {
+              private: {
+                token,
+                locationType,
+                locationDetails,
+                bookerName,
+                bookerEmail,
+                bookerPhone,
+                duration: String(duration),
+                description: safeDescription,
+                additionalAttendeesJson: JSON.stringify(additionalAttendees),
+              },
             },
           },
-        },
-      })
+        })
+      ), { "calendar.operation": "insert", "booking.duration": duration }
     );
   } catch {
     throw new CalendarApiError();
@@ -286,7 +291,7 @@ export async function createBooking(
         startTime: start.toISOString(),
         duration,
         timezone,
-      }).catch((err) => console.error("Failed to update Zoom meeting:", err));
+      }).catch((err) => log.error("Failed to update Zoom meeting", { zoom_failure: true, error: String(err) }));
     }
   }
 
@@ -383,7 +388,7 @@ export async function createBooking(
     text: confirmationText,
     html: confirmationHtml,
     icsContent,
-  }).catch((err) => console.error("Failed to send booking confirmation email:", err));
+  }).catch((err) => log.error("Failed to send booking confirmation email", { error: String(err) }));
 
   // Host notification (Email 01 — Host) — non-fatal
   const emailHostTimezone = process.env.HOST_TIMEZONE ?? timezone;
@@ -427,7 +432,7 @@ export async function createBooking(
     subject: `New booking: ${bookerName} on ${hostParts.dayOfWeek}, ${hostParts.monthDay} at ${hostTime}`,
     text: notificationText,
     html: notificationHtml,
-  }).catch((err) => console.error("Failed to send host notification email:", err));
+  }).catch((err) => log.error("Failed to send host notification email", { error: String(err) }));
 
   // Additional attendee invitation emails — non-fatal
   const extraAttendees = additionalAttendees.filter((a) => a.email);
@@ -472,7 +477,7 @@ export async function createBooking(
       text: attendeeText,
       html: attendeeHtml,
       icsContent,
-    }).catch((err) => console.error("Failed to send attendee invitation email:", err));
+    }).catch((err) => log.error("Failed to send attendee invitation email", { error: String(err) }));
   }
 
   return {
@@ -574,15 +579,18 @@ export async function rescheduleBooking(
   }
 
   try {
-    await calendar.events.patch({
-      calendarId,
-      eventId: event.id!,
-      sendUpdates: "none",
-      requestBody: {
-        start: { dateTime: newStart.toISOString(), timeZone: timezone },
-        end: { dateTime: newEnd.toISOString(), timeZone: timezone },
-      },
-    });
+    await withSpan("calendar.events.patch", () =>
+      calendar.events.patch({
+        calendarId,
+        eventId: event.id!,
+        sendUpdates: "none",
+        requestBody: {
+          start: { dateTime: newStart.toISOString(), timeZone: timezone },
+          end: { dateTime: newEnd.toISOString(), timeZone: timezone },
+        },
+      }),
+      { "calendar.operation": "reschedule", "booking.duration": duration }
+    );
   } catch {
     throw new CalendarApiError("We're having trouble rescheduling. Please try again.");
   }
@@ -596,7 +604,7 @@ export async function rescheduleBooking(
         startTime: newStart.toISOString(),
         duration,
         timezone,
-      }).catch((err) => console.error("Failed to update Zoom meeting on reschedule:", err));
+      }).catch((err) => log.error("Failed to update Zoom meeting on reschedule", { zoom_failure: true, error: String(err) }));
     }
   }
 
@@ -632,16 +640,19 @@ export async function cancelBooking(token: string): Promise<CancelBookingResult>
     const meetingId = extractZoomMeetingId(props.locationDetails);
     if (meetingId) {
       deleteZoomMeeting(meetingId).catch((err) =>
-        console.error("Failed to delete Zoom meeting on cancellation:", err)
+        log.error("Failed to delete Zoom meeting on cancellation", { zoom_failure: true, error: String(err) })
       );
     }
   }
 
   try {
-    await calendar.events.delete({
-      calendarId,
-      eventId: event.id!,
-    });
+    await withSpan("calendar.events.delete", () =>
+      calendar.events.delete({
+        calendarId,
+        eventId: event.id!,
+      }),
+      { "calendar.operation": "cancel" }
+    );
   } catch {
     throw new CalendarApiError("We're having trouble cancelling. Please try again.");
   }

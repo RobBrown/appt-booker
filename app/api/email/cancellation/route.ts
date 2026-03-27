@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
 import {
   sendEmail,
   escapeHtml,
@@ -12,6 +13,8 @@ import {
 } from "@/lib/gmail";
 import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const log = logger.child({ service: "email", emailType: "cancellation" });
 
 export async function POST(request: NextRequest) {
   const limited = await checkRateLimit(limiters.email, request);
@@ -96,12 +99,13 @@ export async function POST(request: NextRequest) {
       "The calendar event has been removed.",
     ].join("\n");
 
-    await sendEmail({
+    log.info("Sending cancellation emails");
+    await withSpan("gmail.send", () => sendEmail({
       to: hostEmail,
       subject: hostSubject,
       text: hostText,
       html: hostHtml,
-    });
+    }), { emailType: "cancellation", target: "host" });
 
     // -------------------------------------------------------------------------
     // Email 06: Cancellation — Booker
@@ -143,12 +147,12 @@ export async function POST(request: NextRequest) {
       "If you'd like to find another time, the booking page is always open.",
     ].join("\n");
 
-    await sendEmail({
+    await withSpan("gmail.send", () => sendEmail({
       to: bookerEmail,
       subject: bookerSubject,
       text: bookerText,
       html: bookerHtml,
-    });
+    }), { emailType: "cancellation", target: "booker" });
 
     // Additional attendee cancellation emails
     const extraAttendees = (additionalAttendees as Array<{ name: string; email?: string }>)
@@ -192,6 +196,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    log.error("Failed to send cancellation emails", { error: String(error) });
     Sentry.captureException(error);
     return NextResponse.json({ error: "Failed to send cancellation emails." }, { status: 500 });
   }

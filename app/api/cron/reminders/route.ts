@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "reminders" });
 import { addHours, addMinutes } from "date-fns";
 import { getCalendarClient } from "@/lib/google-auth";
 import {
@@ -412,6 +415,7 @@ export async function POST(request: NextRequest) {
   const results: Array<{ eventId: string; type: string; sent: string[]; skipped?: string }> = [];
 
   try {
+    return await withSpan("reminders.process", async (span) => {
     const calendar = getCalendarClient();
     const calendarId = process.env.GOOGLE_CALENDAR_ID!;
     const now = new Date();
@@ -458,7 +462,7 @@ export async function POST(request: NextRequest) {
           additionalAttendees = JSON.parse(props.additionalAttendeesJson);
         }
       } catch {
-        // malformed JSON — treat as empty
+        log.warn("Malformed additionalAttendeesJson", { eventId });
       }
 
       if (!bookerName || !bookerEmail || !timezone || !locationType || !durationStr) {
@@ -566,11 +570,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log(`[reminders] ${reminderType} reminder for event ${eventId}: sent [${sent.join(", ")}]`);
+      log.info("Reminder sent", { reminderType, eventId, sent_count: sent.length });
       results.push({ eventId, type: reminderType, sent });
     }
 
-    return NextResponse.json({ ok: true, processed: results.filter((r) => r.type !== "skip").length, results });
+    const sent = results.filter((r) => r.type !== "skip").length;
+    const skipped = results.filter((r) => r.type === "skip").length;
+    span.setAttribute("reminders.sent", sent);
+    span.setAttribute("reminders.skipped", skipped);
+    log.info("Reminders processed", { sent, skipped });
+    return NextResponse.json({ ok: true, processed: sent, results });
+    }); // end withSpan
   } catch (error) {
     Sentry.captureException(error);
     return NextResponse.json({ error: "Reminder job failed." }, { status: 500 });

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, metrics, withSpan } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "bookings" });
 import { addMinutes } from "date-fns";
 import { getCalendarClient } from "@/lib/google-auth";
 import { getBusyPeriods, getHostTimezone } from "@/lib/availability";
@@ -39,6 +42,7 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
 
   try {
+    return await withSpan("bookings.create", async () => {
     const body = await request.json();
     const {
       startTime,
@@ -173,11 +177,13 @@ export async function POST(request: NextRequest) {
           startTime: start.toISOString(),
           duration,
           timezone,
-        }).catch((err) => console.error("Failed to update Zoom meeting:", err));
+        }).catch((err) => log.error("Failed to update Zoom meeting", { zoom_failure: true, error: String(err) }));
       }
     }
 
     const posthog = getPostHogClient();
+    metrics.counter("bookings.created", 1, { location_type: locationType });
+
     posthog.capture({
       distinctId: bookerEmail,
       event: "api_booking_created",
@@ -198,6 +204,7 @@ export async function POST(request: NextRequest) {
       startTime: start.toISOString(),
       duration,
     });
+    }); // end withSpan
   } catch (error) {
     Sentry.captureException(error);
     return NextResponse.json(

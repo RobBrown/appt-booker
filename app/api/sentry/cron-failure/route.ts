@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "sentry-cron" });
 
 export async function POST(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
@@ -25,6 +28,8 @@ export async function POST(request: NextRequest) {
   const raw = body as Record<string, unknown>;
   const workflow = String(raw.workflow ?? "unknown").slice(0, 200);
   const runUrl = String(raw.run_url ?? "").slice(0, 2000);
+
+  log.info("Received cron failure payload", { workflow });
 
   Sentry.captureMessage(`GitHub Actions workflow "${workflow}" failed`, {
     level: "error",

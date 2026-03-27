@@ -2,6 +2,9 @@ import { Ratelimit, type Duration } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "rate-limit" });
 
 // ---------------------------------------------------------------------------
 // Redis client — created only when env vars are present
@@ -77,6 +80,7 @@ export async function checkRateLimit(
     const { success } = await limiter.limit(ip);
 
     if (!success) {
+      log.warn("Rate limit hit", { route: req.nextUrl.pathname });
       return NextResponse.json(
         { error: "Too many requests. Please try again shortly." },
         { status: 429 }
@@ -85,6 +89,7 @@ export async function checkRateLimit(
 
     return null;
   } catch (err) {
+    log.error("Rate limiter error", { error: String(err), route: req.nextUrl.pathname });
     Sentry.captureException(err);
     return serviceDownResponse();
   }

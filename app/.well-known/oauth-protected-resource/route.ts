@@ -8,6 +8,9 @@
 
 import { generateClerkProtectedResourceMetadata } from "@clerk/mcp-tools/server";
 import { metadataCorsOptionsRequestHandler } from "mcp-handler";
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "mcp-discovery" });
 
 function getResourceUrl(req: Request): string {
   // In development, always use the request origin (e.g. http://localhost:3000)
@@ -21,6 +24,7 @@ function getResourceUrl(req: Request): string {
 }
 
 export async function GET(req: Request) {
+  log.info("OAuth protected resource metadata requested");
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY!;
   const resourceUrl = getResourceUrl(req);
 

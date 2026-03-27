@@ -22,7 +22,10 @@
 import { createClerkClient } from "@clerk/backend";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { verifyClerkToken } from "@clerk/mcp-tools/server";
+import { logger, withSpan } from "@hal866245/observability-core";
 import { initializeMcpServer } from "@/lib/mcp/server";
+
+const log = logger.child({ service: "mcp" });
 
 const mcpHandler = createMcpHandler(
   (server) => {
@@ -52,6 +55,7 @@ function getClerk() {
 }
 
 async function verifyToken(req: Request, bearerToken?: string) {
+  log.info("Authenticated MCP request");
   // Use @clerk/backend to authenticate the request as an OAuth token.
   // authenticateRequest() validates the bearer token and returns an auth state
   // object with the same shape that verifyClerkToken expects.
@@ -65,7 +69,7 @@ async function verifyToken(req: Request, bearerToken?: string) {
   return verifyClerkToken(clerkAuth, bearerToken);
 }
 
-const handler = withMcpAuth(mcpHandler, verifyToken, {
+const authedHandler = withMcpAuth(mcpHandler, verifyToken, {
   required: true,
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
   // In dev, omit resourceUrl so withMcpAuth derives it from the request origin.
@@ -75,5 +79,9 @@ const handler = withMcpAuth(mcpHandler, verifyToken, {
       ? `https://${process.env.HOST_DOMAIN}`
       : undefined,
 });
+
+function handler(req: Request) {
+  return withSpan("mcp.handle", () => authedHandler(req), { method: req.method });
+}
 
 export { handler as GET, handler as POST, handler as DELETE };

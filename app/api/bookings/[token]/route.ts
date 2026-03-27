@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, captureError, withSpan } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "bookings" });
 import { addMinutes } from "date-fns";
 import { getCalendarClient } from "@/lib/google-auth";
 import { getBusyPeriods, getHostTimezone } from "@/lib/availability";
@@ -30,6 +33,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (limited) return limited;
 
   try {
+    return await withSpan("bookings.get", async () => {
     const { token } = await context.params;
     const calendar = getCalendarClient();
     const event = await findEventByToken(calendar, token);
@@ -65,6 +69,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       description: props.description ?? "",
       additionalAttendees,
     });
+    }); // end withSpan
   } catch (error) {
     Sentry.captureException(error);
     return NextResponse.json({ error: "Failed to fetch booking." }, { status: 500 });
@@ -76,6 +81,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (limited) return limited;
 
   try {
+    return await withSpan("bookings.reschedule", async () => {
     const { token } = await context.params;
     const body = await request.json();
     const { newStartTime, timezone } = body;
@@ -134,7 +140,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           startTime: newStart.toISOString(),
           duration,
           timezone,
-        }).catch((err) => console.error("Failed to update Zoom meeting on reschedule:", err));
+        }).catch((err) => log.error("Failed to update Zoom meeting on reschedule", { zoom_failure: true, error: String(err) }));
       }
     }
 
@@ -159,7 +165,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       startTime: newStart.toISOString(),
       duration,
     });
+    }); // end withSpan
   } catch (error) {
+    captureError(error as Error, { operation: "reschedule" });
     Sentry.captureException(error);
     return NextResponse.json({ error: "Failed to reschedule booking." }, { status: 500 });
   }
@@ -170,6 +178,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if (limited) return limited;
 
   try {
+    return await withSpan("bookings.cancel", async () => {
     const { token } = await context.params;
     const calendar = getCalendarClient();
     const calendarId = process.env.GOOGLE_CALENDAR_ID!;
@@ -185,7 +194,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       const meetingId = extractZoomMeetingId(props.locationDetails);
       if (meetingId) {
         deleteZoomMeeting(meetingId).catch((err) =>
-          console.error("Failed to delete Zoom meeting on cancellation:", err)
+          log.error("Failed to delete Zoom meeting on cancellation", { zoom_failure: true, error: String(err) })
         );
       }
     }
@@ -208,6 +217,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({ success: true });
+    }); // end withSpan
   } catch (error) {
     Sentry.captureException(error);
     return NextResponse.json({ error: "Failed to cancel booking." }, { status: 500 });

@@ -1,4 +1,7 @@
 import { Redis } from "@upstash/redis";
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "quinn/dedup" });
 
 // ---------------------------------------------------------------------------
 // Redis client — lazy singleton, created on first use
@@ -10,7 +13,7 @@ function createRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {
-    console.warn("[quinn/dedup] Redis not configured — state will not persist");
+    log.warn("Redis not configured — state will not persist");
     return null;
   }
   return new Redis({ url, token });

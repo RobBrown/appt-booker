@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logger, withSpan } from "@hal866245/observability-core";
 import { IntentSchema, type Intent } from "@/lib/quinn/intent";
+
+const log = logger.child({ service: "quinn/parser" });
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -149,14 +152,17 @@ async function invokeClaudeTool(
 ): Promise<unknown | null> {
   const client = getAnthropicClient();
 
-  const response = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 512,
-    system: systemPrompt,
-    tools: [EXTRACT_INTENT_TOOL],
-    tool_choice: { type: "tool", name: "extract_intent" },
-    messages: [{ role: "user", content: userMessage }],
-  });
+  const response = await withSpan("anthropic.parse", async () =>
+    client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 512,
+      system: systemPrompt,
+      tools: [EXTRACT_INTENT_TOOL],
+      tool_choice: { type: "tool", name: "extract_intent" },
+      messages: [{ role: "user", content: userMessage }],
+    }),
+    { model: CLAUDE_MODEL }
+  );
 
   const toolBlock = response.content.find((b) => b.type === "tool_use");
   if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -215,9 +221,7 @@ export async function parseIntent(
         : null;
 
     if (rawInput === null) {
-      console.log(
-        `[quinn/parser] No tool_use block on attempt ${attempt + 1}`
-      );
+      log.warn("No tool_use block", { attempt: attempt + 1 });
       continue;
     }
 
@@ -225,26 +229,26 @@ export async function parseIntent(
 
     if (parsed.success) {
       const latencyMs = Date.now() - startMs;
-      console.log(
-        `[quinn/parser] model=${CLAUDE_MODEL} intent=${parsed.data.intent} ` +
-          `input_tokens=${lastUsage?.input_tokens ?? "?"} ` +
-          `output_tokens=${lastUsage?.output_tokens ?? "?"} ` +
-          `latency=${latencyMs}ms`
-      );
+      log.info("Intent parsed", {
+        model: CLAUDE_MODEL,
+        intent: parsed.data.intent,
+        input_tokens: lastUsage?.input_tokens ?? 0,
+        output_tokens: lastUsage?.output_tokens ?? 0,
+        latency_ms: latencyMs,
+      });
       return parsed.data;
     }
 
-    console.log(
-      `[quinn/parser] Zod validation failed attempt ${attempt + 1}: ` +
-        parsed.error.message
-    );
+    log.warn("Zod validation failed", {
+      attempt: attempt + 1,
+      error: parsed.error.message,
+    });
   }
 
   // Both attempts failed — return unknown fallback (D-21)
   const latencyMs = Date.now() - startMs;
-  console.log(
-    `[quinn/parser] Returning unknown fallback after 2 failed attempts. ` +
-      `latency=${latencyMs}ms`
-  );
+  log.warn("Returning unknown fallback after 2 failed attempts", {
+    latency_ms: latencyMs,
+  });
   return UNKNOWN_FALLBACK;
 }

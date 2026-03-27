@@ -1,9 +1,14 @@
 /**
  * MCP tool call logger.
  *
- * Logs tool name, user email, status, and timing.
+ * Logs tool name, status, and timing via observability-core.
  * Deliberately does NOT log request bodies, tokens, or other sensitive data.
+ * userEmail is omitted (PII) — use a safe surrogate if needed.
  */
+
+import { logger } from "@hal866245/observability-core";
+
+const log = logger.child({ service: "mcp" });
 
 export interface ToolCallLogEntry {
   tool: string;
@@ -13,10 +18,9 @@ export interface ToolCallLogEntry {
 }
 
 export function logToolCall(entry: ToolCallLogEntry): void {
-  const timestamp = new Date().toISOString();
-  // Use console.info for normal tool calls so they're distinguishable from
-  // error output (console.error is reserved for actual errors).
-  console.info(
-    `[MCP] ${timestamp} tool=${entry.tool} user=${entry.userEmail} status=${entry.status} duration=${entry.durationMs}ms`
-  );
+  log.info("MCP tool call", {
+    tool: entry.tool,
+    status: entry.status,
+    duration_ms: entry.durationMs,
+  });
 }

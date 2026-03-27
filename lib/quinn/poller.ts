@@ -1,4 +1,5 @@
 import { google, gmail_v1 } from "googleapis";
+import { logger, withSpan } from "@hal866245/observability-core";
 import { getGoogleAuth } from "@/lib/google-auth";
 import {
   getHistoryId,
@@ -6,6 +7,8 @@ import {
   isProcessed,
   markProcessed,
 } from "@/lib/quinn/dedup";
+
+const log = logger.child({ service: "quinn/poller" });
 
 // ---------------------------------------------------------------------------
 // Gmail client factory
@@ -67,6 +70,7 @@ export interface GmailMessage {
  * and returns an empty array (HEALTH-02 / D-14).
  */
 export async function pollInbox(): Promise<GmailMessage[]> {
+  return withSpan("gmail.poll", async (span) => {
   const gmail = getGmailClient();
 
   // -------------------------------------------------------------------------
@@ -79,7 +83,7 @@ export async function pollInbox(): Promise<GmailMessage[]> {
     const profile = await gmail.users.getProfile({ userId: "me" });
     const initialId = profile.data.historyId!;
     await setHistoryId(initialId);
-    console.log(`[quinn/poller] Bootstrap: stored initial historyId ${initialId}`);
+    log.info("Bootstrap: stored initial historyId", { historyId: initialId });
     return [];
   }
 
@@ -126,7 +130,7 @@ export async function pollInbox(): Promise<GmailMessage[]> {
       const profile = await gmail.users.getProfile({ userId: "me" });
       const newId = profile.data.historyId!;
       await setHistoryId(newId);
-      console.log(`[quinn/poller] Stale cursor reset to ${newId}`);
+      log.info("Stale cursor reset", { historyId: newId });
       return [];
     }
     throw err;
@@ -144,7 +148,7 @@ export async function pollInbox(): Promise<GmailMessage[]> {
   for (const messageId of allMessageIds) {
     // Dedup check
     if (await isProcessed(messageId)) {
-      console.log(`[quinn/poller] Skip duplicate ${messageId}`);
+      log.info("Skip duplicate", { messageId });
       continue;
     }
 
@@ -159,7 +163,7 @@ export async function pollInbox(): Promise<GmailMessage[]> {
 
     // Belt-and-suspenders INGEST-04: ensure INBOX label is present
     if (!msg.labelIds?.includes("INBOX")) {
-      console.log(`[quinn/poller] Skip non-INBOX message ${messageId}`);
+      log.info("Skip non-INBOX message", { messageId });
       continue;
     }
 
@@ -187,5 +191,7 @@ export async function pollInbox(): Promise<GmailMessage[]> {
     });
   }
 
+  span.setAttribute("gmail.messages_fetched", results.length);
   return results;
+  });
 }

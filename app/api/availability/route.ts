@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
 import { getCalendarClient } from "@/lib/google-auth";
 import { getAvailableSlots, getAvailableDatesInMonth } from "@/lib/availability";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const log = logger.child({ service: "availability" });
 
 const VALID_DURATIONS = [15, 30, 60, 120];
 
@@ -11,7 +14,7 @@ export async function GET(request: NextRequest) {
     const limited = await checkRateLimit(limiters.availability, request);
     if (limited) return limited;
   } catch (rlErr) {
-    console.error("[availability] checkRateLimit threw:", rlErr);
+    log.error("checkRateLimit threw", { error: String(rlErr) });
     return NextResponse.json(
       { error: "Rate limit service unavailable." },
       { status: 503 }
@@ -56,19 +59,21 @@ export async function GET(request: NextRequest) {
       if (isNaN(year) || isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) {
         return NextResponse.json({ error: "Invalid month format." }, { status: 400 });
       }
-      const availableDates = await getAvailableDatesInMonth(
-        calendar,
-        year,
-        monthIndex,
-        duration,
-        timezone
-      );
+      const availableDates = await withSpan("calendar.freebusy", async (span) => {
+        const dates = await getAvailableDatesInMonth(calendar, year, monthIndex, duration, timezone);
+        span.setAttribute("availability.date_count", dates.length);
+        return dates;
+      }, { "availability.query": "month", "availability.month": month });
       return NextResponse.json({ month, timezone, duration, availableDates });
     }
 
     // Day-level availability: returns time slots for a specific date
     if (date) {
-      const slots = await getAvailableSlots(calendar, date, duration, timezone);
+      const slots = await withSpan("calendar.freebusy", async (span) => {
+        const result = await getAvailableSlots(calendar, date, duration, timezone);
+        span.setAttribute("availability.slot_count", result.length);
+        return result;
+      }, { "availability.query": "day", "availability.date": date });
       return NextResponse.json({ date, timezone, duration, slots });
     }
 
@@ -77,11 +82,11 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    console.error("[availability] error:", error);
+    log.error("Availability fetch failed", { error: String(error) });
     try {
       Sentry.captureException(error);
     } catch (sentryErr) {
-      console.error("[availability] Sentry.captureException threw:", sentryErr);
+      log.error("Sentry.captureException threw", { error: String(sentryErr) });
     }
     return NextResponse.json(
       { error: "Failed to fetch availability." },

@@ -32,7 +32,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@hal866245/observability-core";
 
+const log = logger.child({ service: "cors" });
 const MUTATING_METHODS = new Set(["POST", "PATCH", "DELETE"]);
 
 /**
@@ -55,6 +57,7 @@ export function middleware(req: NextRequest): NextResponse {
       ]);
 
       if (!allowedOrigins.has(origin)) {
+        log.warn("CORS blocked", { origin, route: req.nextUrl.pathname });
         return new NextResponse(null, { status: 403, statusText: "Forbidden" });
       }
     }

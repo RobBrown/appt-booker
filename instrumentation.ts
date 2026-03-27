@@ -4,31 +4,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./sentry.server.config");
 
-    const { NodeSDK } = await import("@opentelemetry/sdk-node");
-    const { OTLPLogExporter } = await import(
-      "@opentelemetry/exporter-logs-otlp-http"
-    );
-    const { SimpleLogRecordProcessor } = await import(
-      "@opentelemetry/sdk-logs"
-    );
-
-    const posthogHost =
-      process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
-
-    const sdk = new NodeSDK({
-      logRecordProcessors: [
-        new SimpleLogRecordProcessor(
-          new OTLPLogExporter({
-            url: `${posthogHost}/v1/otel/v1/logs`,
-            headers: {
-              Authorization: `Bearer ${process.env.NEXT_PUBLIC_POSTHOG_KEY}`,
-            },
-          })
-        ),
-      ],
-    });
-
-    sdk.start();
+    const { init } = await import("@hal866245/observability-core");
+    init();
   }
 }
 

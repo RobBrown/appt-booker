@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
 import {
   sendEmail,
   buildIcs,
@@ -15,6 +16,8 @@ import {
 } from "@/lib/gmail";
 import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const log = logger.child({ service: "email", emailType: "confirmation" });
 
 export async function POST(request: NextRequest) {
   const limited = await checkRateLimit(limiters.email, request);
@@ -126,13 +129,14 @@ export async function POST(request: NextRequest) {
       attendeeName: bookerName,
     });
 
-    await sendEmail({
+    log.info("Sending confirmation email");
+    await withSpan("gmail.send", () => sendEmail({
       to: bookerEmail,
       subject,
       text,
       html,
       icsContent,
-    });
+    }), { emailType: "confirmation" });
 
     // Additional attendee invitation emails
     const extraAttendees = (additionalAttendees as Array<{ name: string; email?: string }>)
@@ -184,6 +188,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    log.error("Failed to send confirmation email", { error: String(error) });
     Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to send confirmation email." },

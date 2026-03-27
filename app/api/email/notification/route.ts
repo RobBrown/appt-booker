@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { logger, withSpan } from "@hal866245/observability-core";
 import {
   sendEmail,
   escapeHtml,
@@ -11,6 +12,8 @@ import {
 } from "@/lib/gmail";
 import { addMinutes } from "date-fns";
 import { checkRateLimit, limiters } from "@/lib/rate-limit";
+
+const log = logger.child({ service: "email", emailType: "notification" });
 
 export async function POST(request: NextRequest) {
   const limited = await checkRateLimit(limiters.email, request);
@@ -90,15 +93,17 @@ export async function POST(request: NextRequest) {
       `It's on the calendar.`,
     ].join("\n");
 
-    await sendEmail({
+    log.info("Sending notification email");
+    await withSpan("gmail.send", () => sendEmail({
       to: hostEmail,
       subject,
       text,
       html,
-    });
+    }), { emailType: "notification" });
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    log.error("Failed to send notification email", { error: String(error) });
     Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to send notification email." },
