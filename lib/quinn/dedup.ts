@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { logger } from "@hal866245/observability-core";
+import { logger } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "quinn/dedup" });
 

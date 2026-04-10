@@ -11,7 +11,7 @@ import { checkTrust, getHeader, extractEmail } from "@/lib/quinn/trust";
 import { processMessage } from "@/lib/quinn/processor";
 import { composeReply } from "@/lib/quinn/responder";
 import { sendReplyToThread } from "@/lib/quinn/mailer";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 import { getPostHogClient } from "@/lib/posthog-server";
 
 const log = logger.child({ service: "quinn/poll" });

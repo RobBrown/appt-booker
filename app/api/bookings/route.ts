@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import { logger, metrics, withSpan } from "@hal866245/observability-core";
+import { logger, metrics, withSpan } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "bookings" });
 import { addMinutes } from "date-fns";

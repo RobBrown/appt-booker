@@ -22,7 +22,7 @@
 import { createClerkClient } from "@clerk/backend";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { verifyClerkToken } from "@clerk/mcp-tools/server";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 import { initializeMcpServer } from "@/lib/mcp/server";
 
 const log = logger.child({ service: "mcp" });

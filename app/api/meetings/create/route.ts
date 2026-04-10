@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 import { fromZonedTime } from "date-fns-tz";
 import { getGoogleAuth } from "@/lib/google-auth";
 import { createZoomMeeting } from "@/lib/zoom";

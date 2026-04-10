@@ -12,7 +12,7 @@
     "@anthropic-ai/sdk": "^0.80.0",
     "@clerk/mcp-tools": "^0.3.1",
     "@clerk/nextjs": "^7.0.4",
-    "@hal866245/observability-core": "^0.2.0",
+    "@robbrown/observability-core": "1.1.0",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.213.0",
     "@opentelemetry/sdk-logs": "^0.213.0",

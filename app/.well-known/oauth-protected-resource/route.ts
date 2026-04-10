@@ -8,7 +8,7 @@
 
 import { generateClerkProtectedResourceMetadata } from "@clerk/mcp-tools/server";
 import { metadataCorsOptionsRequestHandler } from "mcp-handler";
-import { logger } from "@hal866245/observability-core";
+import { logger } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "mcp-discovery" });
 

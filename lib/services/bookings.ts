@@ -9,7 +9,7 @@
  */
 
 import { addMinutes } from "date-fns";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "bookings" });
 import { getCalendarClient } from "@/lib/google-auth";

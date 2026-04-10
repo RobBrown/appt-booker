@@ -32,7 +32,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { logger } from "@hal866245/observability-core";
+import { logger } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "cors" });
 const MUTATING_METHODS = new Set(["POST", "PATCH", "DELETE"]);

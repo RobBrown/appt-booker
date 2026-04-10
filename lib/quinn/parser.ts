@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 import { IntentSchema, type Intent } from "@/lib/quinn/intent";
 
 const log = logger.child({ service: "quinn/parser" });

@@ -6,7 +6,7 @@
  * userEmail is omitted (PII) — use a safe surrogate if needed.
  */
 
-import { logger } from "@hal866245/observability-core";
+import { logger } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "mcp" });
 

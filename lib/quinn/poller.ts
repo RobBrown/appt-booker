@@ -1,5 +1,5 @@
 import { google, gmail_v1 } from "googleapis";
-import { logger, withSpan } from "@hal866245/observability-core";
+import { logger, withSpan } from "@robbrown/observability-core";
 import { getGoogleAuth } from "@/lib/google-auth";
 import {
   getHistoryId,

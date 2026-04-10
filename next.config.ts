@@ -53,7 +53,7 @@ const nextConfig: NextConfig = {
     "gaxios",
     "google-auth-library",
     "node-fetch",
-    "@hal866245/observability-core",
+    "@robbrown/observability-core",
     "@opentelemetry/api",
     "@opentelemetry/sdk-node",
     "@opentelemetry/sdk-logs",

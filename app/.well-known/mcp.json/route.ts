@@ -8,7 +8,7 @@
  * This route MUST be publicly accessible — no auth required.
  */
 
-import { logger } from "@hal866245/observability-core";
+import { logger } from "@robbrown/observability-core";
 
 const log = logger.child({ service: "mcp-discovery" });
 
